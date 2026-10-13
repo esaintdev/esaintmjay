@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { authenticated } from "../../lib/auth";
+import { authenticated } from "../../lib/auth.ts";
 import Admin from "../../components/Admin";
 export default async function AdminPage() {
   if (!(await authenticated())) redirect("/admin/login");

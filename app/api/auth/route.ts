@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { supabase } from "../../../lib/supabase.mjs";
+import { supabase } from "../../../lib/supabase.ts";
 import {
   COOKIE,
   checkOrigin,
@@ -10,13 +10,14 @@ import {
   createSession,
   hashToken,
   email,
+  errorResponse,
   HttpError,
-} from "../../../lib/security.mjs";
+} from "../../../lib/security.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(request) {
+export async function POST(request: Request) {
   try {
     checkOrigin(request);
     await rateLimit(`login:${clientKey(request)}`, 10, 15 * 60_000);
@@ -54,27 +55,20 @@ export async function POST(request) {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (e) {
-    return Response.json(
-      { error: e.status ? e.message : "Unable to sign in." },
-      { status: e.status || 500 },
-    );
+    return errorResponse(e, "Unable to sign in.");
   }
 }
 
-export async function DELETE(request) {
+export async function DELETE(request: Request) {
   try {
     checkOrigin(request);
     const jar = await cookies();
     const token = jar.get(COOKIE)?.value;
-    if (token) {
-      await supabase()
-        .from("sessions")
-        .delete()
-        .eq("token", hashToken(token));
-    }
+    if (token)
+      await supabase().from("sessions").delete().eq("token", hashToken(token));
     jar.delete(COOKIE);
     return Response.json({ ok: true });
   } catch (e) {
-    return Response.json({ error: e.message }, { status: e.status || 500 });
+    return errorResponse(e, "Unable to sign out.");
   }
 }

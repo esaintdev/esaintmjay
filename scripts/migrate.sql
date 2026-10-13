@@ -1,8 +1,9 @@
 -- =============================================================
 -- Esaint Mjay Portfolio — Supabase Database Migration
 -- =============================================================
--- Run this entire file in the Supabase SQL Editor:
--- Dashboard → your project → SQL Editor → New query → paste → Run
+-- Run with `npm run migrate`, or paste this entire file into the
+-- Supabase SQL Editor (Dashboard → SQL Editor → New query → Run).
+-- Safe to run more than once.
 -- =============================================================
 
 -- ── settings ──────────────────────────────────────────────────
@@ -97,6 +98,7 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE OR REPLACE FUNCTION rate_limit_increment(p_key TEXT, p_period BIGINT)
 RETURNS INTEGER
 LANGUAGE plpgsql
+SET search_path = public
 AS $$
 DECLARE
   v_count INTEGER;
@@ -115,6 +117,11 @@ BEGIN
   RETURN v_count;
 END;
 $$;
+
+-- Only the server (service role) needs to count attempts; keep the public
+-- anon key from calling the function at all.
+REVOKE ALL ON FUNCTION rate_limit_increment(TEXT, BIGINT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION rate_limit_increment(TEXT, BIGINT) TO service_role;
 
 
 -- =============================================================
@@ -152,11 +159,20 @@ CREATE POLICY "public_settings_read" ON settings FOR SELECT USING (true);
 
 
 -- =============================================================
--- Supabase Storage bucket
--- Create manually in the Supabase Dashboard:
---   Storage → New bucket → Name: "portfolio-assets" → Private ✓
--- Or run:
+-- Supabase Storage bucket (PRIVATE)
+-- Files are never public: /media/[id] checks publication or admin
+-- sign-in, then redirects to a link that expires after 10 minutes.
+-- Keeping the bucket private means draft artwork cannot be reached.
 -- =============================================================
--- INSERT INTO storage.buckets (id, name, public)
--- VALUES ('portfolio-assets', 'portfolio-assets', false)
--- ON CONFLICT DO NOTHING;
+-- The admin's browser uploads straight to this bucket using one-time
+-- signed links, so the bucket also enforces the size and type limits
+-- (15 MB, images and PDF). The app re-checks each file afterwards.
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'portfolio-assets', 'portfolio-assets', false, 15728640,
+  ARRAY['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf']
+)
+ON CONFLICT (id) DO UPDATE SET
+  public = false,
+  file_size_limit = EXCLUDED.file_size_limit,
+  allowed_mime_types = EXCLUDED.allowed_mime_types;

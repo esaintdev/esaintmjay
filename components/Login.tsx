@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
+import { errorMessage } from "../lib/client.ts";
 function EyeIcon() {
   return (
     <svg
@@ -45,7 +46,7 @@ export default function Login() {
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [showPassword, setShowPassword] = useState(false);
-  async function submit(e) {
+  async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
     setBusy(true);
@@ -57,11 +58,11 @@ export default function Login() {
             Object.fromEntries(new FormData(e.currentTarget)),
           ),
         }),
-        v = await r.json();
+        v = (await r.json()) as { error?: string };
       if (!r.ok) throw new Error(v.error);
       window.location.assign("/admin");
-    } catch (e) {
-      setError(e.message);
+    } catch (err) {
+      setError(errorMessage(err));
       setBusy(false);
     }
   }

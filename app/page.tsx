@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getSettings, groups, entries } from "../lib/db.mjs";
+import { getSettings, groups, entries } from "../lib/db.ts";
 import { Header, Footer, Star, SectionTitle } from "../components/Site";
 import WorkGrid from "../components/WorkGrid";
 import Contact from "../components/Contact";

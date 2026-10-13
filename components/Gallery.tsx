@@ -1,11 +1,14 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
-export default function Gallery({ images }) {
-  const [index, setIndex] = useState(null),
-    dialog = useRef(null),
-    lastButton = useRef(null);
+import type { Asset } from "../lib/types.ts";
+export default function Gallery({ images }: { images: Asset[] }) {
+  const [index, setIndex] = useState<number | null>(null),
+    dialog = useRef<HTMLDialogElement>(null),
+    lastButton = useRef<HTMLButtonElement | null>(null);
+  const current = index === null ? undefined : images[index];
   useEffect(() => {
-    if (index !== null && !dialog.current.open) dialog.current.showModal();
+    const d = dialog.current;
+    if (index !== null && d && !d.open) d.showModal();
   }, [index]);
   useEffect(() => {
     if (index === null) return;
@@ -16,12 +19,14 @@ export default function Gallery({ images }) {
     };
   }, [index]);
   function close() {
-    dialog.current.close();
+    dialog.current?.close();
     setIndex(null);
     lastButton.current?.focus();
   }
-  function step(n) {
-    setIndex((i) => (i + n + images.length) % images.length);
+  function step(n: number) {
+    setIndex((i) =>
+      i === null ? null : (i + n + images.length) % images.length,
+    );
   }
   return (
     <>
@@ -66,20 +71,20 @@ export default function Gallery({ images }) {
           if (e.key === "ArrowLeft") step(-1);
         }}
       >
-        {index !== null && (
+        {index !== null && current && (
           <>
             <div className="lightbox-top">
               <p>
-                {index + 1} / {images.length} — {images[index].title}
+                {index + 1} / {images.length} — {current.title}
               </p>
               <button autoFocus onClick={close}>
                 Close ×
               </button>
             </div>
-            <img src={`/media/${images[index].id}`} alt={images[index].alt} />
+            <img src={`/media/${current.id}`} alt={current.alt} />
             <div className="lightbox-bottom">
               <button onClick={() => step(-1)}>← Previous</button>
-              <p>{images[index].caption}</p>
+              <p>{current.caption}</p>
               <button onClick={() => step(1)}>Next →</button>
             </div>
           </>

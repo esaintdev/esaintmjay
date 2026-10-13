@@ -1,11 +1,15 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { supabase } from "../../../lib/supabase.mjs";
-import { getSettings } from "../../../lib/db.mjs";
-import { authenticated } from "../../../lib/auth";
+import { supabase } from "../../../lib/supabase.ts";
+import { getSettings } from "../../../lib/db.ts";
+import { authenticated } from "../../../lib/auth.ts";
 import { Header, Footer, Star } from "../../../components/Site";
+import type { Entry } from "../../../lib/types.ts";
 
-async function article(id) {
+type Props = { params: Promise<{ id: string }> };
+
+async function article(id: string): Promise<Entry> {
   const { data: a, error } = await supabase()
     .from("entries")
     .select("*")
@@ -16,7 +20,7 @@ async function article(id) {
   return a;
 }
 
-export async function generateMetadata({ params }) {
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const a = await article((await params).id);
   return {
     title: a.title,
@@ -25,11 +29,8 @@ export async function generateMetadata({ params }) {
   };
 }
 
-export default async function Article({ params }) {
-  const [a, s] = await Promise.all([
-    article((await params).id),
-    getSettings(),
-  ]);
+export default async function Article({ params }: Props) {
+  const [a, s] = await Promise.all([article((await params).id), getSettings()]);
   return (
     <div id="top">
       <Header settings={s} />

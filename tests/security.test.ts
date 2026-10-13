@@ -8,7 +8,8 @@ import {
   text,
   fileType,
   readBody,
-} from "../lib/security.mjs";
+  HttpError,
+} from "../lib/security.ts";
 test("salted password hashes verify only the original password", async () => {
   const a = await passwordHash("Long test password 123!"),
     b = await passwordHash("Long test password 123!");
@@ -30,7 +31,7 @@ test("uploads are identified from bytes and SVG is rejected", () => {
     null,
   );
   assert.equal(
-    fileType(Buffer.from("%PDF-1.7\nExample PDF bytes")).mime,
+    fileType(Buffer.from("%PDF-1.7\nExample PDF bytes"))?.mime,
     "application/pdf",
   );
 });
@@ -44,9 +45,9 @@ test("streaming size limits work without Content-Length", async () => {
       },
     }),
     duplex: "half",
-  });
+  } as RequestInit);
   await assert.rejects(
     () => readBody(r, 50),
-    (e) => e.status === 413,
+    (e) => e instanceof HttpError && e.status === 413,
   );
 });

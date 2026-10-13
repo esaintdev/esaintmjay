@@ -2,22 +2,60 @@
 
 A standard Next.js application with an editable public portfolio and a protected admin studio at `/admin`. The reference-inspired design uses warm off-white, black, orange, bold headings, outlined panels, and generous space. Body copy is 17–20 px, admin inputs are 16 px, and small labels are at least 15 px.
 
+All content lives in **Supabase**: PostgreSQL holds the text, settings, account and enquiries, and a **private** Supabase Storage bucket holds the uploaded images and CV.
+
 ## Start the project
 
-Use **Node.js 24 or newer**. Node supplies SQLite directly. No separate database installation is needed.
+Use **Node.js 22.18 or newer** and a Supabase project ([supabase.com](https://supabase.com), free tier is fine).
+
+### 1. Configure environment variables
 
 ```bash
 npm install
 cp .env.example .env.local
-npm run admin:setup
-npm run dev
 ```
 
 On Windows, copy `.env.example` to `.env.local` in Explorer or use PowerShell `Copy-Item .env.example .env.local`.
 
-Open `http://localhost:3000`. Sign in at `http://localhost:3000/admin` using the account created by the setup command. Setup prompts for your email and a password of at least 12 characters, with hidden password input. There is no default password or public registration endpoint.
+Fill in `.env.local` from your Supabase dashboard:
 
-Only three direct dependencies: **Next.js, React, React DOM**. Plain JavaScript and CSS; no ORM, UI kit, Tailwind, upload library, authentication package, or CMS service. Use `npm install`; there is no npm CI requirement.
+| Variable | Where to find it | Required |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Project Settings → API → Project URL | yes |
+| `SUPABASE_SERVICE_ROLE_KEY` | Project Settings → API → `service_role` key | yes — **server only, never share or commit it** |
+| `SUPABASE_STORAGE_BUCKET` | Any name; created for you by the migration | no (default `portfolio-assets`) |
+| `SUPABASE_ACCESS_TOKEN` | Account → Access Tokens (used only by `npm run migrate`) | one of these two |
+| `DATABASE_URL` | Project Settings → Database → connection string (used only by `npm run migrate`) | one of these two |
+| `APP_ORIGIN` | Your site's address, e.g. `http://localhost:3000` | yes in production |
+| `TRUST_PROXY` | See [Production hosting](#production-hosting) | no (default `false`) |
+
+### 2. Create the database tables and storage bucket
+
+```bash
+npm run migrate
+```
+
+This runs `scripts/migrate.sql`, which creates the tables, the rate-limit function, row-level security policies and the private storage bucket. It is safe to run again. If you prefer, paste `scripts/migrate.sql` into **Supabase Dashboard → SQL Editor** and run it there instead (if you changed `SUPABASE_STORAGE_BUCKET`, edit the bucket name at the bottom of the file first).
+
+### 3. Create the admin account and start
+
+```bash
+npm run admin:setup
+npm run dev
+```
+
+Open `http://localhost:3000`. Sign in at `http://localhost:3000/admin` using the account created by the setup command. Setup prompts for your email and a password of at least 12 characters, with hidden password input. For non-interactive environments, set `ADMIN_EMAIL` and `ADMIN_PASSWORD` instead. There is no default password or public registration endpoint.
+
+Direct dependencies: **Next.js, React, React DOM, and `@supabase/supabase-js`**. Dev dependencies are TypeScript and its type packages, plus `pg` (used only by `npm run migrate` with `DATABASE_URL`). No ORM, UI kit, Tailwind, upload library or authentication package.
+
+## TypeScript
+
+The whole project is **strict TypeScript** (`tsconfig.json` has `"strict": true`), with plain CSS.
+
+- `npm run typecheck` checks every file. `npm run build` also type-checks and fails on errors.
+- `lib/database.types.ts` describes the Supabase tables for the typed client. **When you change a column in `scripts/migrate.sql`, change it there too.** You can also regenerate it with `npx supabase gen types typescript --project-id <your-project-ref> > lib/database.types.ts`.
+- `lib/types.ts` holds the shared app types (settings, collections, entries and the admin data), used by both the server and the admin UI.
+- Scripts and tests are `.ts` files run directly by Node, which strips the types (this is why Node 22.18+ is required). Code that Node runs uses only type syntax that can be erased (no `enum` or `namespace`), and imports between those files keep their `.ts` extension. `tsconfig.json` enforces both.
 
 ## Company → design gallery
 
@@ -43,82 +81,141 @@ All portfolio images belong to a group. Draft groups and their media remain priv
 - Contact form and private inbox with read/unread controls, deletion, and email reply links.
 - Social links, accent colour, section visibility, search title/description, and footer note.
 - Change admin email/password and revoke all active sessions.
-- Forgotten-password reset through `npm run admin:setup` on your server.
+- Forgotten-password reset through `npm run admin:setup`.
 - Backup command for the database and uploaded files.
 
-Editable content lives in SQLite, not in page source. The initial copy and name are editable defaults. No clients, statistics, awards, qualifications, testimonials, or contact details have been invented. Add your real work and details. The hero uses your initials until you upload a portrait. Empty awards, experience, and article sections stay hidden; services fall back to your editable specialties until you add entries.
+Editable content lives in the database, not in page source. The initial copy and name are editable defaults. No clients, statistics, awards, qualifications, testimonials, or contact details have been invented. Add your real work and details. The hero uses your initials until you upload a portrait. Empty awards, experience, and article sections stay hidden; services fall back to your editable specialties until you add entries.
 
-## Uploads and persistence
+## Uploads and media delivery
 
-Default storage is `data/portfolio.sqlite` and `data/uploads/`. SQLite may also create `-wal` and `-shm` files while running. Set an absolute `DATA_DIR` to change location. The Node process must have write access. Never expose this directory as a public web folder.
+Files are stored in the Supabase Storage bucket named by `SUPABASE_STORAGE_BUCKET`. The bucket is **private**, so nothing in it has a permanent public address.
+
+**Uploading.** Files go straight from the admin's browser to Supabase and never pass through the app server. This keeps uploads within the ~4.5 MB request limit of Vercel functions.
+
+1. The admin page asks `/api/admin/upload` for a one-time upload link. The server checks you are signed in, plus the file's declared type and size.
+2. The browser sends the file directly to Supabase with that link. The bucket itself refuses files over 15 MB or of the wrong type.
+3. The admin page calls `/api/admin/upload/complete`. The server reads the start of the stored file to check its real format (signature) and size, deletes it if it doesn't match, and otherwise adds it to the portfolio.
+
+**Viewing.** Every image and the CV are linked as `/media/[id]` on this site. That route:
+
+- issues a link only if the file's collection is published, it is the current portrait or CV, or you are signed in as admin (so drafts can be previewed but not reached by anyone else);
+- redirects to a signed Supabase link that expires after 10 minutes, so the file itself is downloaded from Supabase rather than through the app server;
+- returns 404 for anything else;
+- lets the browser reuse the redirect for public files for 5 minutes, and never caches it for drafts;
+- makes the CV download as `Esaint-Mjay-CV.pdf`.
+
+Keep the bucket private. Making it public would let anyone with a file name download draft artwork. Running `npm run migrate` sets it back to private and restores the size and type limits.
+
+Upload limits:
 
 - Images: PNG, JPEG, WebP, GIF, up to **15 MB per image**.
 - CV: PDF, up to **10 MB**.
-- Upload signatures and streamed byte limits are checked on the server. SVG, HTML, and executable file formats are rejected.
-- Images are served from original uploads. Resize large artwork for the web before uploading; no extra image processing package is used.
-- CV replacement removes the old file and download URL.
-- Media delivery checks group publication or admin authentication and sends private, no-store headers.
-- Unpublishing stops subsequent public access; it cannot revoke copies someone already downloaded.
+- File signatures and sizes are checked on the server after upload. SVG, HTML, and executable file formats are rejected, including when renamed.
+- Images are served from the original uploads. Resize large artwork for the web before uploading; no image processing package is used.
+- Replacing the CV or portrait removes the old file.
+- Unpublishing stops new links at once. Links already handed out keep working until they expire (at most 10 minutes), and copies someone already downloaded can't be revoked.
+- If an upload is abandoned between steps 2 and 3 (for example, the tab is closed), the file can be left in the bucket without appearing in the admin. These are harmless and can be deleted from Supabase Dashboard → Storage.
+
+## Security notes
+
+- The **service-role key** bypasses row-level security. It is read only on the server (`lib/supabase.ts`); never prefix it with `NEXT_PUBLIC_` or expose it to the browser.
+- Row-level security is enabled on every table. With the public anon key, only published collections, images, entries and the site settings can be read; the admin account, sessions, rate limits and enquiries cannot.
+- Admin passwords are salted scrypt hashes. Sessions last 8 hours and are stored as SHA-256 hashes of the cookie token.
+- **Rate limits**: login allows 10 attempts and the contact form 5 submissions per 15 minutes per client. Counting happens atomically in Postgres (`rate_limit_increment`), which only the server's service role may call. If the limit cannot be checked (for example, the migration hasn't been run), login and contact requests are refused with a 503 rather than left unlimited.
+- All writes must come from `APP_ORIGIN`.
 
 ## Production hosting
 
-Use a Node host/VPS or container with a **persistent disk**, preferably one application instance. Static hosting or ephemeral serverless storage is unsuitable for this SQLite/filesystem configuration. This is native Next.js, not a Vinext or Cloudflare adapter.
+### Vercel (recommended)
 
-Set `.env.local` or your host's environment:
+The app keeps no files on its own disk, and uploads and images go directly between the browser and Supabase, so it runs well on Vercel.
 
-```dotenv
-APP_ORIGIN=https://your-domain.example
-DATA_DIR=/var/lib/esaint-portfolio
-TRUST_PROXY=false
-```
+1. Run `npm run migrate` and `npm run admin:setup` once from your own computer, with `.env.local` pointing at the production Supabase project.
+2. Import the GitHub repository in Vercel. The framework preset is detected as Next.js; keep the default build settings.
+3. In **Project → Settings → Environment Variables**, add:
 
-`APP_ORIGIN` is required in production and must match the browser origin exactly. It validates writes and enables secure cookies for HTTPS.
+   ```dotenv
+   APP_ORIGIN=https://your-domain.example
+   NEXT_PUBLIC_SUPABASE_URL=...
+   SUPABASE_SERVICE_ROLE_KEY=...
+   SUPABASE_STORAGE_BUCKET=portfolio-assets
+   TRUST_PROXY=true
+   ```
+
+4. Deploy. If you change `NEXT_PUBLIC_SUPABASE_URL` later, **redeploy**: the address is built into the site's Content Security Policy at build time, and images won't load if it's out of date.
+
+Notes:
+
+- `APP_ORIGIN` must match the address visitors use exactly (for example `https://esaintmjay.com`, with no trailing slash). An `https://` value also turns on secure cookies. Writes from any other origin are rejected, so admin changes on a Vercel preview URL (`*.vercel.app`) will fail unless `APP_ORIGIN` is set to that URL for the preview environment.
+- Vercel replaces `X-Forwarded-For` with the visitor's real IP, so `TRUST_PROXY=true` gives each visitor their own rate limit.
+- `SUPABASE_ACCESS_TOKEN` and `DATABASE_URL` are only used by `npm run migrate` and are not needed on Vercel.
+
+### Other Node hosts
+
+Any host that runs `next start` also works, such as a VPS or a container. Set the same environment variables, then:
 
 ```bash
 npm install
-npm run admin:setup
+npm run migrate        # once, and again after updating scripts/migrate.sql
+npm run admin:setup    # once
 npm run build
 npm start
 ```
 
-Configure HTTPS, process restart after reboot, request bodies up to 16 MB, and persistent `DATA_DIR` across deployments. Never serve the data folder publicly. If your reverse proxy overwrites `X-Forwarded-For` with the actual client IP, set `TRUST_PROXY=true` for per-client throttling; otherwise keep it false. Without a trusted proxy, requests share conservative limits. Login allows 10 attempts per 15 minutes; contact allows 5 submissions per 15 minutes per bucket.
+Configure HTTPS. If your reverse proxy overwrites `X-Forwarded-For` with the real client IP, set `TRUST_PROXY=true` for per-client throttling. Otherwise keep it `false`, and all visitors share the same conservative limits.
 
 The inbox stores enquiries in the application. It does not send email notifications. Reply opens your configured email app; no SMTP service is required.
 
 ## Backups
 
-Stop the app before backup to keep the database and files consistent:
+Supabase keeps its own database backups (daily on paid plans). To keep an independent copy:
 
 ```bash
 npm run backup
-# Or choose a private destination outside DATA_DIR:
+# Or choose a private destination:
 npm run backup -- /absolute/path/to/backup
 ```
 
-The backup contains `portfolio.sqlite` and `uploads/`. Keep it private, since it includes account hashes and enquiries. Keep an additional copy outside the server.
+This writes `tables/*.json` (settings, admin, groups, assets, entries, messages) and `files/` (every file in the bucket) to `backups/<timestamp>/`. Keep it private: it includes the admin password hash and enquiries. Keep an additional copy off your computer.
 
-To restore: stop the app, retain the current data directory as a rollback copy, then copy the backed-up SQLite file and uploads into a clean `DATA_DIR`. Do not reuse old `-wal` or `-shm` files. Restore filesystem permissions and restart. Run `npm run admin:setup` to reset access and invalidate sessions if needed.
+To restore into a fresh project: run `npm run migrate`, upload the contents of `files/` to the bucket root (Dashboard → Storage), then import each JSON file into its table, inserting `groups` before `assets`. Afterwards, run `npm run admin:setup` to reset access if needed.
 
-## Verification and limitations
+## Verification
 
 ```bash
+npm run typecheck
 npm run build
 npm test
 ```
 
-Tests use Node's built-in runner and isolated temporary storage, exercise the production HTTP routes, then stop the test server. No testing package is required. Browser visual and interaction QA still needs to be done on your machine; an interactive browser was not available here. No live deployment is included.
+Tests use Node's built-in runner; no testing package is required.
+
+- `tests/security.test.ts` checks password hashing, validation, file-type detection and upload limits. It runs offline.
+- `tests/application.test.ts` starts the production build and exercises every route: login, cross-origin protection, uploads, draft media privacy, publishing, CV replacement, settings, articles, the inbox, rate limiting, deletion and password changes. **It erases all data in the configured Supabase project and replaces the admin account**, so it is skipped unless you point `.env.local` at a separate, disposable Supabase project and run:
+
+  ```bash
+  SUPABASE_TEST_PROJECT=true npm test
+  ```
+
+Browser visual and interaction QA still needs to be done by hand.
 
 ## Source structure
 
 - `app/`: App Router pages and API routes.
-- `app/api/admin/[[...path]]/`: protected CRUD and file uploads.
+- `app/api/admin/[[...path]]/`: protected CRUD and the two-step direct upload.
 - `app/api/auth/`: login/logout.
 - `app/api/contact/`: public enquiry submission.
-- `app/media/[id]/`: publication-aware file delivery.
+- `app/media/[id]/`: publication-aware redirects to signed links for files in the private bucket.
 - `app/work/[slug]/`: company galleries.
 - `app/journal/[id]/`: articles.
 - `components/`: public and admin UI.
-- `lib/`: SQLite, sessions, passwords, validation, limits.
-- `scripts/`: administrator setup and backups.
+- `lib/supabase.ts`: typed server-side Supabase client and bucket name.
+- `lib/database.types.ts`: Supabase table types (keep in sync with `scripts/migrate.sql`).
+- `lib/types.ts`: shared app types.
+- `lib/client.ts`: small helpers for client components.
+- `lib/db.ts`: settings, collections, assets, entries and storage helpers.
+- `lib/security.ts`: sessions, passwords, validation, rate limits.
+- `scripts/migrate.sql` and `scripts/run-migration.ts`: database schema and the `npm run migrate` runner.
+- `scripts/admin.ts`: administrator setup and reset.
+- `scripts/backup.ts`: local backup of tables and files.
 - `tests/`: security and production-route checks.
-# esaintmjay

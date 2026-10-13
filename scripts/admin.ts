@@ -1,47 +1,57 @@
 /**
- * scripts/admin.mjs
+ * scripts/admin.ts
  * ---------------------------------------------------------
  * Interactive CLI to create or reset the portfolio administrator.
- * Uses Supabase (service-role key) instead of local SQLite.
+ * Uses the Supabase service-role key.
  *
  * Usage:
  *   npm run admin:setup
  */
-import { createInterface } from "node:readline/promises";
+import { createInterface, type Interface } from "node:readline/promises";
 import { Writable } from "node:stream";
-import { supabase } from "../lib/supabase.mjs";
-import { passwordHash, email } from "../lib/security.mjs";
+import { supabase } from "../lib/supabase.ts";
+import { passwordHash, email } from "../lib/security.ts";
 
 const envEmail = process.env.ADMIN_EMAIL;
 const envPassword = process.env.ADMIN_PASSWORD;
 
-let prompt = null;
+let prompt: Interface | null = null;
+let hidden = false;
 
-async function secret(label) {
+function ask(label: string): Promise<string> {
+  if (!prompt) throw new Error("No interactive terminal.");
+  return prompt.question(label);
+}
+
+async function secret(label: string): Promise<string> {
   process.stdout.write(label);
   hidden = true;
   try {
-    return await prompt.question("");
+    return await ask("");
   } finally {
     hidden = false;
     process.stdout.write("\n");
   }
 }
 
-let hidden = false;
-
 if (!envEmail || !envPassword) {
   if (!process.stdin.isTTY) {
-    console.error("Run in an interactive terminal or set ADMIN_EMAIL and ADMIN_PASSWORD environment variables.");
+    console.error(
+      "Run in an interactive terminal or set ADMIN_EMAIL and ADMIN_PASSWORD environment variables.",
+    );
     process.exit(1);
   }
   const output = new Writable({
-    write(chunk, encoding, callback) {
+    write(
+      chunk: Buffer | string,
+      encoding: BufferEncoding,
+      callback: () => void,
+    ) {
       if (!hidden) process.stdout.write(chunk, encoding);
       callback();
     },
   });
-  output.isTTY = true;
+  Object.assign(output, { isTTY: true });
   prompt = createInterface({ input: process.stdin, output, terminal: true });
 }
 
@@ -53,11 +63,13 @@ try {
     .maybeSingle();
 
   console.log(
-    existing ? "Reset portfolio administrator" : "Create portfolio administrator",
+    existing
+      ? "Reset portfolio administrator"
+      : "Create portfolio administrator",
   );
 
-  let address;
-  let password;
+  let address: string;
+  let password: string;
 
   if (envEmail && envPassword) {
     address = email(envEmail);
@@ -65,16 +77,15 @@ try {
   } else {
     if (
       existing &&
-      (await prompt.question(
+      (await ask(
         "This resets access and signs out all sessions. Type RESET to continue: ",
       )) !== "RESET"
     )
       throw new Error("Cancelled.");
 
     address = email(
-      (await prompt.question(
-        `Admin email${existing ? ` (${existing.email})` : ""}: `,
-      )) || existing?.email,
+      (await ask(`Admin email${existing ? ` (${existing.email})` : ""}: `)) ||
+        existing?.email,
     );
     password = await secret("Password (12+ characters): ");
     const confirm = await secret("Confirm password: ");
@@ -95,8 +106,8 @@ try {
 
   console.log("Administrator saved. Open /admin to sign in.");
 } catch (e) {
-  console.error(e.message);
+  console.error(e instanceof Error ? e.message : e);
   process.exitCode = 1;
 } finally {
-  if (prompt) prompt.close();
+  prompt?.close();
 }
