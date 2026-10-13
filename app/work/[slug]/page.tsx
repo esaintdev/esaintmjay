@@ -43,7 +43,7 @@ export default async function Work({ params }: Props) {
       <Header settings={s} />
       <main id="main" className="wrap">
         <div className="detail-heading">
-          <Link className="text-link" href="/#work">
+          <Link className="text-link" href="/work">
             ← All collections
           </Link>
           {!g.published && (

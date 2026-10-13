@@ -18,11 +18,12 @@ export function Header({ settings: s }: { settings: Settings }) {
         </span>
       </Link>
       <nav aria-label="Main navigation">
-        <Link href="/#work">Work</Link>
-        <Link href="/#about">About</Link>
-        {s.showServices && <Link href="/#services">Services</Link>}
+        <Link href="/work">Work</Link>
+        <Link href="/about">About</Link>
+        {s.showServices && <Link href="/services">Services</Link>}
+        <Link href="/contact">Contact</Link>
       </nav>
-      <Link className="button" href="/#contact">
+      <Link className="button" href="/contact">
         Let’s talk ↗
       </Link>
     </header>

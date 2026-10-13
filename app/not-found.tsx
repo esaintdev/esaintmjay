@@ -4,8 +4,8 @@ export default function NotFound() {
     <main id="main" className="error-page">
       <span className="star">✳</span>
       <p className="eyebrow">404 / A little off the page</p>
-      <h1>This page isn’t here.</h1>
-      <p>It may have moved, or it may still be in the studio.</p>
+      <h1>You came to a page we didn't mean to create.</h1>
+      <p>Head back and try again.</p>
       <Link className="button dark" href="/">
         Back to the portfolio ↗
       </Link>
