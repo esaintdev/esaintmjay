@@ -185,21 +185,29 @@ export default function Admin() {
           continue;
         }
         try {
-          const r = await fetch(
-              "/api/admin/upload?" +
-                new URLSearchParams({
-                  kind,
-                  name: f.name,
-                  ...(groupId ? { groupId } : {}),
-                }),
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/octet-stream" },
-                body: f,
-              },
-            ),
-            v = await r.json();
-          if (!r.ok) throw new Error(v.error);
+          // 1. ask the server for a one-time upload link
+          const ticket = await api("/api/admin/upload", "POST", {
+            kind,
+            groupId,
+            name: f.name,
+            type: f.type,
+            size: f.size,
+          });
+          // 2. send the file straight to Supabase Storage
+          const put = await fetch(ticket.uploadUrl, {
+            method: "PUT",
+            headers: { "Content-Type": f.type },
+            body: f,
+          });
+          if (!put.ok) throw new Error("The upload failed. Please try again.");
+          // 3. let the server check the file and add it to the portfolio
+          await api("/api/admin/upload/complete", "POST", {
+            id: ticket.id,
+            filename: ticket.filename,
+            kind,
+            groupId,
+            name: f.name,
+          });
           count++;
         } catch (e) {
           errors.push(`${f.name}: ${e.message}`);

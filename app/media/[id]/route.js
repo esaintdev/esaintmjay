@@ -1,5 +1,5 @@
-import { supabase, BUCKET } from "../../../lib/supabase.mjs";
-import { getSettings } from "../../../lib/db.mjs";
+import { supabase } from "../../../lib/supabase.mjs";
+import { getSettings, storageSignedUrl } from "../../../lib/db.mjs";
 import { authenticated } from "../../../lib/auth";
 
 export const runtime = "nodejs";
@@ -11,12 +11,21 @@ const notFound = () =>
     headers: { "Cache-Control": "private, no-store" },
   });
 
+// How long a signed link stays valid, and how long the browser may reuse
+// the redirect to it (shorter, so a cached redirect never points at an
+// expired link).
+const LINK_SECONDS = 600;
+const REUSE_SECONDS = 300;
+
 /**
- * Streams a file from the private Supabase Storage bucket.
- * The bucket is never exposed directly: a file is served only if it belongs
- * to a published collection, is the current portrait/CV, or the visitor is
- * the signed-in admin. Unpublishing therefore stops access immediately
- * (apart from a short browser cache of public files).
+ * Sends the visitor to a short-lived signed link for a file in the private
+ * Supabase Storage bucket. The bucket is never exposed directly: a link is
+ * issued only if the file belongs to a published collection, is the current
+ * portrait/CV, or the visitor is the signed-in admin. Unpublishing stops new
+ * links at once; links already issued expire within LINK_SECONDS.
+ *
+ * Redirecting (rather than streaming the file through this function) keeps
+ * large images off Vercel function bandwidth and size limits.
  */
 export async function GET(request, { params }) {
   const { id } = await params;
@@ -24,7 +33,7 @@ export async function GET(request, { params }) {
 
   const { data: a, error } = await supabase()
     .from("assets")
-    .select("filename, mime, kind, group_id")
+    .select("filename, kind, group_id")
     .eq("id", id)
     .maybeSingle();
   if (error || !a) return notFound();
@@ -45,24 +54,21 @@ export async function GET(request, { params }) {
 
   if (!publicFile && !(await authenticated())) return notFound();
 
-  const { data: blob, error: dlErr } = await supabase()
-    .storage.from(BUCKET)
-    .download(a.filename);
-  if (dlErr || !blob) {
-    console.error("[media] download failed", a.filename, dlErr?.message);
-    return notFound();
-  }
+  const url = await storageSignedUrl(
+    a.filename,
+    LINK_SECONDS,
+    a.kind === "cv" ? "Esaint-Mjay-CV.pdf" : undefined,
+  );
+  if (!url) return notFound();
 
-  const headers = {
-    "Content-Type": a.mime,
-    "Content-Length": String(blob.size),
-    "X-Content-Type-Options": "nosniff",
-    // Public files may sit in the visitor's own browser cache briefly;
-    // drafts seen by the admin are never cached.
-    "Cache-Control": publicFile ? "private, max-age=300" : "private, no-store",
-  };
-  if (a.kind === "cv")
-    headers["Content-Disposition"] = 'attachment; filename="Esaint-Mjay-CV.pdf"';
-
-  return new Response(blob.stream(), { headers });
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: url,
+      // drafts seen by the admin are never cached
+      "Cache-Control": publicFile
+        ? `private, max-age=${REUSE_SECONDS}`
+        : "private, no-store",
+    },
+  });
 }

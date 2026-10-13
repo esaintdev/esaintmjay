@@ -128,6 +128,45 @@ test(
     assert.ok(r.ok, JSON.stringify(v));
     return v;
   }
+  // Mirrors the admin page: get a signed link, PUT the file to Supabase,
+  // then ask the server to verify and save it. Returns the final response.
+  async function upload(kind, name, type, body, groupId) {
+    const ticket = await req("/api/admin/upload", "POST", {
+      kind,
+      groupId,
+      name,
+      type,
+      size: body.length,
+    });
+    if (!ticket.ok) return ticket;
+    const info = await ticket.json();
+    const put = await fetch(info.uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": type },
+      body,
+    });
+    assert.ok(put.ok, await put.clone().text());
+    return req("/api/admin/upload/complete", "POST", {
+      id: info.id,
+      filename: info.filename,
+      kind,
+      groupId,
+      name,
+    });
+  }
+  async function uploaded(...args) {
+    const r = await upload(...args),
+      v = await r.json();
+    assert.ok(r.ok, JSON.stringify(v));
+    return v.id;
+  }
+  // /media answers with a redirect to a signed Supabase link
+  async function media(id, auth = true) {
+    const r = await req(`/media/${id}`, "GET", null, auth);
+    if (r.status !== 302) return { status: r.status, redirect: r };
+    const file = await fetch(r.headers.get("location"));
+    return { status: file.status, redirect: r, file };
+  }
   await t.test(
     "public site renders and admin access requires authentication",
     async () => {
@@ -204,38 +243,34 @@ test(
     },
   );
   await t.test("group uploads and private draft media", async () => {
-    a1 = (
-      await ok(
-        `/api/admin/upload?kind=work&groupId=${gid}&name=first.png`,
-        "POST",
-        png,
-      )
-    ).id;
-    a2 = (
-      await ok(
-        `/api/admin/upload?kind=work&groupId=${gid}&name=second.png`,
-        "POST",
-        png,
-      )
-    ).id;
-    assert.equal((await req(`/media/${a1}`, "GET", null, false)).status, 404);
-    const draft = await req(`/media/${a1}`);
+    a1 = await uploaded("work", "first.png", "image/png", png, gid);
+    a2 = await uploaded("work", "second.png", "image/png", png, gid);
+    assert.equal((await media(a1, false)).status, 404);
+    const draft = await media(a1);
     assert.equal(draft.status, 200);
-    assert.equal(draft.headers.get("content-type"), "image/png");
-    assert.deepEqual(Buffer.from(await draft.arrayBuffer()), png);
+    assert.match(draft.redirect.headers.get("cache-control"), /no-store/);
+    assert.deepEqual(Buffer.from(await draft.file.arrayBuffer()), png);
     const d = await ok("/api/admin");
     assert.equal(d.groups.find((g) => g.id === gid).image_count, 2);
     assert.equal(d.groups.find((g) => g.id === gid2).image_count, 0);
+    assert.deepEqual(
+      d.assets.filter((a) => a.group_id === gid).map((a) => a.sort_order),
+      [0, 1],
+    );
+    const svg = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+    );
+    // SVG is refused up front...
     assert.equal(
-      (
-        await req(
-          `/api/admin/upload?kind=work&groupId=${gid}&name=bad.svg`,
-          "POST",
-          Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>'),
-        )
-      ).status,
+      (await upload("work", "bad.svg", "image/svg+xml", svg, gid)).status,
       400,
     );
+    // ...and an SVG disguised as a PNG is caught after upload and removed
+    assert.equal(
+      (await upload("work", "bad.png", "image/png", svg, gid)).status,
+      400,
+    );
+    assert.equal((await bucketFiles()).length, 2);
   });
   await t.test(
     "image editing/order, cover ownership, public gallery rendering",
@@ -275,7 +310,7 @@ test(
       const h = await r.text();
       assert.match(h, /Identity artwork/);
       assert.doesNotMatch(h, /<script>alert\(1\)<\/script>/);
-      assert.equal((await req(`/media/${a1}`, "GET", null, false)).status, 200);
+      assert.equal((await media(a1, false)).status, 200);
       const home = await req("/");
       assert.equal(home.status, 200, output);
     },
@@ -286,27 +321,18 @@ test(
       const pdf = Buffer.from(
         "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF",
       );
-      const first = (
-        await ok("/api/admin/upload?kind=cv&name=cv.pdf", "POST", pdf)
-      ).id;
+      const first = await uploaded("cv", "cv.pdf", "application/pdf", pdf);
+      const cv = await media(first, false);
+      assert.equal(cv.status, 200);
       assert.match(
-        (await req("/media/" + first, "GET", null, false)).headers.get(
-          "content-disposition",
-        ),
-        /attachment/,
+        cv.file.headers.get("content-disposition"),
+        /attachment.*Esaint-Mjay-CV\.pdf/,
       );
-      const second = (
-        await ok("/api/admin/upload?kind=cv&name=new.pdf", "POST", pdf)
-      ).id;
-      assert.equal(
-        (await req("/media/" + first, "GET", null, false)).status,
-        404,
-      );
+      const second = await uploaded("cv", "new.pdf", "application/pdf", pdf);
+      assert.equal((await media(first, false)).status, 404);
       await ok("/api/admin/assets/" + second, "DELETE");
       assert.equal((await ok("/api/admin")).settings.cvId, "");
-      const portrait = (
-        await ok("/api/admin/upload?kind=portrait&name=me.png", "POST", png)
-      ).id;
+      const portrait = await uploaded("portrait", "me.png", "image/png", png);
       assert.equal((await ok("/api/admin")).settings.portraitId, portrait);
       await ok("/api/admin/assets/" + portrait, "DELETE");
     },
@@ -392,7 +418,7 @@ test(
         (await req("/work/company-alpha", "GET", null, false)).status,
         404,
       );
-      assert.equal((await req("/media/" + a1, "GET", null, false)).status, 404);
+      assert.equal((await media(a1, false)).status, 404);
       assert.match(
         (await req("/media/" + a1)).headers.get("cache-control"),
         /no-store/,

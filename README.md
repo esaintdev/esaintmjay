@@ -80,23 +80,33 @@ Editable content lives in the database, not in page source. The initial copy and
 
 ## Uploads and media delivery
 
-Uploads are stored in the Supabase Storage bucket named by `SUPABASE_STORAGE_BUCKET`. The bucket is **private**: Supabase never serves the files directly. Every image and the CV are delivered through `/media/[id]` on this site, which:
+Files are stored in the Supabase Storage bucket named by `SUPABASE_STORAGE_BUCKET`. The bucket is **private**, so nothing in it has a permanent public address.
 
-- serves a file only if its collection is published, it is the current portrait or CV, or you are signed in as admin (so drafts can be previewed but not reached by anyone else);
+**Uploading.** Files go straight from the admin's browser to Supabase and never pass through the app server. This keeps uploads within the ~4.5 MB request limit of Vercel functions.
+
+1. The admin page asks `/api/admin/upload` for a one-time upload link. The server checks you are signed in, plus the file's declared type and size.
+2. The browser sends the file directly to Supabase with that link. The bucket itself refuses files over 15 MB or of the wrong type.
+3. The admin page calls `/api/admin/upload/complete`. The server reads the start of the stored file to check its real format (signature) and size, deletes it if it doesn't match, and otherwise adds it to the portfolio.
+
+**Viewing.** Every image and the CV are linked as `/media/[id]` on this site. That route:
+
+- issues a link only if the file's collection is published, it is the current portrait or CV, or you are signed in as admin (so drafts can be previewed but not reached by anyone else);
+- redirects to a signed Supabase link that expires after 10 minutes, so the file itself is downloaded from Supabase rather than through the app server;
 - returns 404 for anything else;
-- lets public files sit in the visitor's browser cache for up to 5 minutes, and never caches drafts;
-- sends the CV as a download named `Esaint-Mjay-CV.pdf`.
+- lets the browser reuse the redirect for public files for 5 minutes, and never caches it for drafts;
+- makes the CV download as `Esaint-Mjay-CV.pdf`.
 
-Keep the bucket private. Making it public would let anyone with a file name download draft artwork. Running `npm run migrate` sets it back to private.
+Keep the bucket private. Making it public would let anyone with a file name download draft artwork. Running `npm run migrate` sets it back to private and restores the size and type limits.
 
 Upload limits:
 
 - Images: PNG, JPEG, WebP, GIF, up to **15 MB per image**.
 - CV: PDF, up to **10 MB**.
-- Upload signatures and streamed byte limits are checked on the server. SVG, HTML, and executable file formats are rejected.
+- File signatures and sizes are checked on the server after upload. SVG, HTML, and executable file formats are rejected, including when renamed.
 - Images are served from the original uploads. Resize large artwork for the web before uploading; no image processing package is used.
 - Replacing the CV or portrait removes the old file.
-- Unpublishing stops subsequent public access. It cannot revoke copies someone already downloaded.
+- Unpublishing stops new links at once. Links already handed out keep working until they expire (at most 10 minutes), and copies someone already downloaded can't be revoked.
+- If an upload is abandoned between steps 2 and 3 (for example, the tab is closed), the file can be left in the bucket without appearing in the admin. These are harmless and can be deleted from Supabase Dashboard → Storage.
 
 ## Security notes
 
@@ -108,20 +118,34 @@ Upload limits:
 
 ## Production hosting
 
-Any Node.js host that runs `next start` works, such as a VPS, a container, or a Node platform. The app keeps no files on its own disk, so ephemeral storage is fine. The host must accept request bodies up to 16 MB for image uploads; some serverless platforms cap uploads lower (for example, about 4.5 MB on Vercel functions), which would reject larger images.
+### Vercel (recommended)
 
-Set these on your host:
+The app keeps no files on its own disk, and uploads and images go directly between the browser and Supabase, so it runs well on Vercel.
 
-```dotenv
-APP_ORIGIN=https://your-domain.example
-NEXT_PUBLIC_SUPABASE_URL=...
-NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-SUPABASE_SERVICE_ROLE_KEY=...
-SUPABASE_STORAGE_BUCKET=portfolio-assets
-TRUST_PROXY=false
-```
+1. Run `npm run migrate` and `npm run admin:setup` once from your own computer, with `.env.local` pointing at the production Supabase project.
+2. Import the GitHub repository in Vercel. The framework preset is detected as Next.js; keep the default build settings.
+3. In **Project → Settings → Environment Variables**, add:
 
-`APP_ORIGIN` is required in production and must match the browser origin exactly. It validates writes and enables secure cookies for HTTPS.
+   ```dotenv
+   APP_ORIGIN=https://your-domain.example
+   NEXT_PUBLIC_SUPABASE_URL=...
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+   SUPABASE_SERVICE_ROLE_KEY=...
+   SUPABASE_STORAGE_BUCKET=portfolio-assets
+   TRUST_PROXY=true
+   ```
+
+4. Deploy. If you change `NEXT_PUBLIC_SUPABASE_URL` later, **redeploy**: the address is built into the site's Content Security Policy at build time, and images won't load if it's out of date.
+
+Notes:
+
+- `APP_ORIGIN` must match the address visitors use exactly (for example `https://esaintmjay.com`, with no trailing slash). An `https://` value also turns on secure cookies. Writes from any other origin are rejected, so admin changes on a Vercel preview URL (`*.vercel.app`) will fail unless `APP_ORIGIN` is set to that URL for the preview environment.
+- Vercel replaces `X-Forwarded-For` with the visitor's real IP, so `TRUST_PROXY=true` gives each visitor their own rate limit.
+- `SUPABASE_ACCESS_TOKEN` and `DATABASE_URL` are only used by `npm run migrate` and are not needed on Vercel.
+
+### Other Node hosts
+
+Any host that runs `next start` also works, such as a VPS or a container. Set the same environment variables, then:
 
 ```bash
 npm install
@@ -170,10 +194,10 @@ Browser visual and interaction QA still needs to be done by hand.
 ## Source structure
 
 - `app/`: App Router pages and API routes.
-- `app/api/admin/[[...path]]/`: protected CRUD and file uploads.
+- `app/api/admin/[[...path]]/`: protected CRUD and the two-step direct upload.
 - `app/api/auth/`: login/logout.
 - `app/api/contact/`: public enquiry submission.
-- `app/media/[id]/`: publication-aware file delivery from the private bucket.
+- `app/media/[id]/`: publication-aware redirects to signed links for files in the private bucket.
 - `app/work/[slug]/`: company galleries.
 - `app/journal/[id]/`: articles.
 - `components/`: public and admin UI.

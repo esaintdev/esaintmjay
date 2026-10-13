@@ -5,14 +5,14 @@ import {
   saveSettings,
   defaults,
   findById,
-  storageUpload,
+  storageUploadUrl,
+  storageInspect,
   storageDelete,
 } from "../../../../lib/db.mjs";
 import { requireAdmin } from "../../../../lib/auth";
 import {
   checkOrigin,
   jsonBody,
-  readBody,
   text,
   email,
   safeUrl,
@@ -40,6 +40,22 @@ const fail = (e) => {
     { status: e.status || 500 },
   );
 };
+// Uploads go straight from the browser to Supabase Storage (see the
+// "upload" routes below), so these limits are not bound by the ~4.5 MB
+// request cap of Vercel functions.
+const uploadKinds = {
+  work: { max: 15 * 1024 * 1024, mimes: ["image/png", "image/jpeg", "image/webp", "image/gif"] },
+  portrait: { max: 15 * 1024 * 1024, mimes: ["image/png", "image/jpeg", "image/webp", "image/gif"] },
+  cv: { max: 10 * 1024 * 1024, mimes: ["application/pdf"] },
+};
+const extensions = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "application/pdf": "pdf",
+};
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const flag = (x) => (x === true || x === 1 ? true : false);
 const order = (x) =>
   Number.isSafeInteger(Number(x))
@@ -116,62 +132,99 @@ async function mutate(request, { params }, method) {
     await requireAdmin();
     const [resource, id] = (await params).path || [];
 
-    // ── upload ──────────────────────────────────────────────────────────────
-    if (resource === "upload" && method === "POST") {
-      const u = new URL(request.url),
-        kind = u.searchParams.get("kind"),
-        groupId = u.searchParams.get("groupId");
+    const v = method === "DELETE" ? {} : await jsonBody(request);
 
-      if (!["work", "portrait", "cv"].includes(kind))
-        throw new HttpError("Unknown upload type.");
-      if (kind === "work") await findById("groups", groupId);
-
-      const b = await readBody(
-          request,
-          (kind === "cv" ? 10 : 15) * 1024 * 1024,
-        ),
-        type = fileType(b);
-
-      if (
-        !type ||
-        (kind === "cv"
-          ? type.mime !== "application/pdf"
-          : !type.mime.startsWith("image/"))
-      )
+    // ── upload, step 1: get a one-time upload URL ───────────────────────────
+    // body: { kind, groupId?, name, type, size }
+    if (resource === "upload" && !id && method === "POST") {
+      const rule = Object.hasOwn(uploadKinds, v.kind) && uploadKinds[v.kind];
+      if (!rule) throw new HttpError("Unknown upload type.");
+      if (v.kind === "work") await findById("groups", v.groupId);
+      if (!rule.mimes.includes(v.type))
         throw new HttpError(
-          kind === "cv"
+          v.kind === "cv"
             ? "Please upload a PDF CV."
             : "Use a PNG, JPG, WebP, or GIF image.",
         );
+      if (!Number.isSafeInteger(v.size) || v.size < 16)
+        throw new HttpError("This file is empty or unreadable.");
+      if (v.size > rule.max) throw new HttpError("The upload is too large.", 413);
 
       const assetId = randomUUID(),
-        filename = `${assetId}.${type.ext}`,
-        original = text(u.searchParams.get("name") || "Untitled", 200),
+        filename = `${assetId}.${extensions[v.type]}`;
+      return reply({
+        id: assetId,
+        filename,
+        uploadUrl: await storageUploadUrl(filename),
+      });
+    }
+
+    // ── upload, step 2: verify the uploaded file and save it ───────────────
+    // body: { id, filename, kind, groupId?, name }
+    if (resource === "upload" && id === "complete" && method === "POST") {
+      const rule = Object.hasOwn(uploadKinds, v.kind) && uploadKinds[v.kind];
+      if (!rule) throw new HttpError("Unknown upload type.");
+      const groupId = v.kind === "work" ? v.groupId : null;
+      if (v.kind === "work") await findById("groups", groupId);
+
+      const assetId = String(v.id || "");
+      const ext = String(v.filename || "").split(".").pop();
+      const filename = `${assetId}.${ext}`;
+      if (
+        !uuid.test(assetId) ||
+        filename !== v.filename ||
+        !Object.values(extensions).includes(ext)
+      )
+        throw new HttpError("Invalid upload.");
+
+      const { data: taken } = await supabase()
+        .from("assets")
+        .select("id")
+        .eq("id", assetId)
+        .maybeSingle();
+      if (taken) throw new HttpError("Invalid upload.");
+
+      // Check what actually arrived in storage: size and file signature.
+      const stored = await storageInspect(filename);
+      if (!stored) throw new HttpError("The upload did not finish. Please try again.");
+      const type = fileType(stored.head);
+      if (
+        !type ||
+        type.ext !== ext ||
+        !rule.mimes.includes(type.mime) ||
+        !(stored.size > 0 && stored.size <= rule.max)
+      ) {
+        await storageDelete(filename);
+        throw new HttpError(
+          stored.size > rule.max
+            ? "The upload is too large."
+            : v.kind === "cv"
+              ? "Please upload a PDF CV."
+              : "Use a PNG, JPG, WebP, or GIF image.",
+        );
+      }
+
+      const original = text(v.name || "Untitled", 200) || "Untitled",
         title = original.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ");
 
-      // upload to Supabase Storage
-      await storageUpload(filename, b, type.mime);
-
-      // get current sort order
-      const { data: sortData } = await supabase()
-        .from("assets")
-        .select("sort_order")
-        .is("group_id", kind === "work" ? groupId : null)
+      // next sort position
+      let last = supabase().from("assets").select("sort_order");
+      last = groupId ? last.eq("group_id", groupId) : last.is("group_id", null);
+      const { data: sortData } = await last
         .order("sort_order", { ascending: false })
         .limit(1)
         .maybeSingle();
       const sort = sortData ? sortData.sort_order + 1 : 0;
 
-      // insert asset row
       const { error: insertErr } = await supabase()
         .from("assets")
         .insert({
           id: assetId,
-          group_id: kind === "work" ? groupId : null,
-          kind,
+          group_id: groupId,
+          kind: v.kind,
           filename,
           mime: type.mime,
-          bytes: b.length,
+          bytes: stored.size,
           title,
           alt: title,
           sort_order: sort,
@@ -183,8 +236,8 @@ async function mutate(request, { params }, method) {
       }
 
       // if portrait or cv, update settings and remove old asset
-      if (kind !== "work") {
-        const key = kind === "cv" ? "cvId" : "portraitId";
+      if (v.kind !== "work") {
+        const key = v.kind === "cv" ? "cvId" : "portraitId";
         const settings = await getSettings();
         const oldId = settings[key];
 
@@ -205,8 +258,6 @@ async function mutate(request, { params }, method) {
 
       return reply({ id: assetId });
     }
-
-    const v = method === "DELETE" ? {} : await jsonBody(request);
 
     // ── settings ─────────────────────────────────────────────────────────────
     if (resource === "settings" && method === "PUT") {
