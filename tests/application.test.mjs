@@ -1,23 +1,58 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { setTimeout as pause } from "node:timers/promises";
-test("production application workflows", { timeout: 120000 }, async (t) => {
+
+// These tests ERASE every table and file in the configured Supabase project
+// and replace the admin account. Point .env at a separate, disposable test
+// project and set SUPABASE_TEST_PROJECT=true to run them.
+const enabled = process.env.SUPABASE_TEST_PROJECT === "true";
+
+test(
+  "production application workflows",
+  {
+    timeout: 180000,
+    skip: enabled
+      ? false
+      : "set SUPABASE_TEST_PROJECT=true with a disposable Supabase project",
+  },
+  async (t) => {
   assert.ok(existsSync(".next/BUILD_ID"), "Run npm run build first.");
-  const dir = await mkdtemp(path.join(tmpdir(), "esaint-test-"));
-  process.env.DATA_DIR = dir;
-  const { db } = await import("../lib/db.mjs"),
+  const { supabase, BUCKET } = await import("../lib/supabase.mjs"),
     { passwordHash } = await import("../lib/security.mjs");
+  const sb = supabase();
+  async function bucketFiles() {
+    const { data, error } = await sb.storage.from(BUCKET).list("", { limit: 1000 });
+    assert.ifError(error);
+    return data.filter((f) => f.id).map((f) => f.name);
+  }
+  // start from an empty project
+  for (const [table, key] of [
+    ["groups", "id"],
+    ["assets", "id"],
+    ["entries", "id"],
+    ["messages", "id"],
+    ["sessions", "token"],
+    ["limits", "key"],
+  ])
+    assert.ifError((await sb.from(table).delete().neq(key, "__none__")).error);
+  assert.ifError((await sb.from("settings").delete().eq("id", 1)).error);
+  const leftovers = await bucketFiles();
+  if (leftovers.length) await sb.storage.from(BUCKET).remove(leftovers);
+
   const password = "Portfolio test password 123!",
     changed = "Updated test password 456!";
-  db()
-    .prepare("INSERT INTO admin VALUES(1,?,?)")
-    .run("admin@example.test", await passwordHash(password));
+  assert.ifError(
+    (
+      await sb.from("admin").upsert({
+        id: 1,
+        email: "admin@example.test",
+        password: await passwordHash(password),
+      })
+    ).error,
+  );
   const listener = createServer();
   await new Promise((r) => listener.listen(0, "127.0.0.1", r));
   const port = listener.address().port;
@@ -38,7 +73,6 @@ test("production application workflows", { timeout: 120000 }, async (t) => {
       env: {
         ...process.env,
         NODE_ENV: "production",
-        DATA_DIR: dir,
         APP_ORIGIN: base,
         TRUST_PROXY: "false",
         NEXT_TELEMETRY_DISABLED: "1",
@@ -55,9 +89,6 @@ test("production application workflows", { timeout: 120000 }, async (t) => {
       pause(3000),
     ]);
     if (server.exitCode === null) server.kill("SIGKILL");
-    db().close();
-    delete globalThis.__esaintDb;
-    await rm(dir, { recursive: true, force: true });
   });
   let ready = false;
   for (let i = 0; i < 120; i++) {
@@ -188,7 +219,10 @@ test("production application workflows", { timeout: 120000 }, async (t) => {
       )
     ).id;
     assert.equal((await req(`/media/${a1}`, "GET", null, false)).status, 404);
-    assert.equal((await req(`/media/${a1}`)).status, 200);
+    const draft = await req(`/media/${a1}`);
+    assert.equal(draft.status, 200);
+    assert.equal(draft.headers.get("content-type"), "image/png");
+    assert.deepEqual(Buffer.from(await draft.arrayBuffer()), png);
     const d = await ok("/api/admin");
     assert.equal(d.groups.find((g) => g.id === gid).image_count, 2);
     assert.equal(d.groups.find((g) => g.id === gid2).image_count, 0);
@@ -338,9 +372,9 @@ test("production application workflows", { timeout: 120000 }, async (t) => {
         message: "Let us discuss design.",
       });
       const m = (await ok("/api/admin")).messages[0];
-      assert.equal(m.is_read, 0);
+      assert.equal(m.is_read, false);
       await ok("/api/admin/messages/" + m.id, "PUT", { is_read: true });
-      assert.equal((await ok("/api/admin")).messages[0].is_read, 1);
+      assert.equal((await ok("/api/admin")).messages[0].is_read, true);
       await ok("/api/admin/messages/" + m.id, "DELETE");
       await ok("/api/contact", "POST", { website: "spam" });
       assert.equal((await ok("/api/admin")).messages.length, 0);
@@ -374,7 +408,7 @@ test("production application workflows", { timeout: 120000 }, async (t) => {
         false,
       );
       assert.equal(
-        (await readdir(path.join(dir, "uploads"))).some(
+        (await bucketFiles()).some(
           (f) => f.startsWith(a1) || f.startsWith(a2),
         ),
         false,
@@ -409,4 +443,14 @@ test("production application workflows", { timeout: 120000 }, async (t) => {
       assert.equal((await req("/api/admin")).status, 401);
     },
   );
-});
+  await t.test("contact form is rate limited per window", async () => {
+    // 2 submissions were already made above; the limit is 5 per 15 minutes
+    const codes = [];
+    for (let i = 0; i < 4; i++)
+      codes.push(
+        (await req("/api/contact", "POST", { website: "spam" }, false)).status,
+      );
+    assert.deepEqual(codes, [200, 200, 200, 429]);
+  });
+  },
+);

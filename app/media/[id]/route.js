@@ -5,20 +5,30 @@ import { authenticated } from "../../../lib/auth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const notFound = () =>
+  new Response("Not found", {
+    status: 404,
+    headers: { "Cache-Control": "private, no-store" },
+  });
+
+/**
+ * Streams a file from the private Supabase Storage bucket.
+ * The bucket is never exposed directly: a file is served only if it belongs
+ * to a published collection, is the current portrait/CV, or the visitor is
+ * the signed-in admin. Unpublishing therefore stops access immediately
+ * (apart from a short browser cache of public files).
+ */
 export async function GET(request, { params }) {
   const { id } = await params;
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return notFound();
 
-  // fetch asset metadata
   const { data: a, error } = await supabase()
     .from("assets")
-    .select("*")
+    .select("filename, mime, kind, group_id")
     .eq("id", id)
     .maybeSingle();
+  if (error || !a) return notFound();
 
-  if (error || !a) return new Response("Not found", { status: 404 });
-
-  // determine if the file is accessible publicly
-  const s = await getSettings();
   let publicFile;
   if (a.group_id) {
     const { data: grp } = await supabase()
@@ -29,45 +39,30 @@ export async function GET(request, { params }) {
       .maybeSingle();
     publicFile = !!grp;
   } else {
+    const s = await getSettings();
     publicFile = [s.cvId, s.portraitId].includes(id);
   }
 
-  if (!publicFile && !(await authenticated()))
-    return new Response("Not found", { status: 404 });
+  if (!publicFile && !(await authenticated())) return notFound();
 
-  // For a public bucket: get the direct CDN URL and redirect
-  const { data: urlData } = supabase()
-    .storage
-    .from(BUCKET)
-    .getPublicUrl(a.filename);
-
-  if (!urlData?.publicUrl)
-    return new Response("File unavailable", { status: 404 });
-
-  // CV: force download via Content-Disposition — must proxy
-  if (a.kind === "cv") {
-    try {
-      const { data: blob, error: dlErr } = await supabase()
-        .storage
-        .from(BUCKET)
-        .download(a.filename);
-      if (dlErr || !blob)
-        return new Response("File unavailable", { status: 404 });
-      const arrayBuffer = await blob.arrayBuffer();
-      return new Response(arrayBuffer, {
-        headers: {
-          "Content-Type": "application/pdf",
-          "Content-Length": String(arrayBuffer.byteLength),
-          "Cache-Control": "private, no-store",
-          "X-Content-Type-Options": "nosniff",
-          "Content-Disposition": 'attachment; filename="Esaint-Mjay-CV.pdf"',
-        },
-      });
-    } catch {
-      return new Response("File unavailable", { status: 404 });
-    }
+  const { data: blob, error: dlErr } = await supabase()
+    .storage.from(BUCKET)
+    .download(a.filename);
+  if (dlErr || !blob) {
+    console.error("[media] download failed", a.filename, dlErr?.message);
+    return notFound();
   }
 
-  // Images: redirect to the CDN URL directly (fast, cacheable)
-  return Response.redirect(urlData.publicUrl, 302);
+  const headers = {
+    "Content-Type": a.mime,
+    "Content-Length": String(blob.size),
+    "X-Content-Type-Options": "nosniff",
+    // Public files may sit in the visitor's own browser cache briefly;
+    // drafts seen by the admin are never cached.
+    "Cache-Control": publicFile ? "private, max-age=300" : "private, no-store",
+  };
+  if (a.kind === "cv")
+    headers["Content-Disposition"] = 'attachment; filename="Esaint-Mjay-CV.pdf"';
+
+  return new Response(blob.stream(), { headers });
 }

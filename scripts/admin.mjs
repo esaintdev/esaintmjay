@@ -2,7 +2,7 @@
  * scripts/admin.mjs
  * ---------------------------------------------------------
  * Interactive CLI to create or reset the portfolio administrator.
- * Uses Supabase (service-role key) instead of local SQLite.
+ * Uses the Supabase service-role key.
  *
  * Usage:
  *   npm run admin:setup

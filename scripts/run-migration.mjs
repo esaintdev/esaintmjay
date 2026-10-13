@@ -12,7 +12,13 @@ const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const token = process.env.SUPABASE_ACCESS_TOKEN;
 const dbUrl = process.env.DATABASE_URL;
 
-const sql = readFileSync(new URL("./migrate.sql", import.meta.url), "utf8");
+const bucket = process.env.SUPABASE_STORAGE_BUCKET || "portfolio-assets";
+if (!/^[a-z0-9][a-z0-9._-]{1,62}$/.test(bucket)) {
+  console.error("SUPABASE_STORAGE_BUCKET may only contain lowercase letters, numbers, dots, hyphens and underscores.");
+  process.exit(1);
+}
+const sql = readFileSync(new URL("./migrate.sql", import.meta.url), "utf8")
+  .replaceAll("'portfolio-assets'", `'${bucket}'`);
 
 if (token && url) {
   const match = url.match(/https:\/\/([^.]+)\./);
