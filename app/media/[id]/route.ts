@@ -1,6 +1,6 @@
-import { supabase } from "../../../lib/supabase.mjs";
-import { getSettings, storageSignedUrl } from "../../../lib/db.mjs";
-import { authenticated } from "../../../lib/auth";
+import { supabase } from "../../../lib/supabase.ts";
+import { getSettings, storageSignedUrl } from "../../../lib/db.ts";
+import { authenticated } from "../../../lib/auth.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,7 +27,10 @@ const REUSE_SECONDS = 300;
  * Redirecting (rather than streaming the file through this function) keeps
  * large images off Vercel function bandwidth and size limits.
  */
-export async function GET(request, { params }) {
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/i.test(id)) return notFound();
 

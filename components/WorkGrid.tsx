@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
 import { GroupCard, Star } from "./Site";
-export default function WorkGrid({ groups }) {
+import type { GroupSummary } from "../lib/types.ts";
+export default function WorkGrid({ groups }: { groups: GroupSummary[] }) {
   const [category, setCategory] = useState("All work");
   const categories = [
     "All work",

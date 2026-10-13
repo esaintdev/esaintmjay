@@ -6,7 +6,7 @@ All content lives in **Supabase**: PostgreSQL holds the text, settings, account 
 
 ## Start the project
 
-Use **Node.js 20.9 or newer** and a Supabase project ([supabase.com](https://supabase.com), free tier is fine).
+Use **Node.js 22.18 or newer** and a Supabase project ([supabase.com](https://supabase.com), free tier is fine).
 
 ### 1. Configure environment variables
 
@@ -22,7 +22,6 @@ Fill in `.env.local` from your Supabase dashboard:
 | Variable | Where to find it | Required |
 | --- | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Project Settings → API → Project URL | yes |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Project Settings → API → `anon` key | yes |
 | `SUPABASE_SERVICE_ROLE_KEY` | Project Settings → API → `service_role` key | yes — **server only, never share or commit it** |
 | `SUPABASE_STORAGE_BUCKET` | Any name; created for you by the migration | no (default `portfolio-assets`) |
 | `SUPABASE_ACCESS_TOKEN` | Account → Access Tokens (used only by `npm run migrate`) | one of these two |
@@ -47,7 +46,16 @@ npm run dev
 
 Open `http://localhost:3000`. Sign in at `http://localhost:3000/admin` using the account created by the setup command. Setup prompts for your email and a password of at least 12 characters, with hidden password input. For non-interactive environments, set `ADMIN_EMAIL` and `ADMIN_PASSWORD` instead. There is no default password or public registration endpoint.
 
-Direct dependencies: **Next.js, React, React DOM, and `@supabase/supabase-js`** (`pg` is a dev dependency used only by `npm run migrate` with `DATABASE_URL`). Plain JavaScript and CSS; no ORM, UI kit, Tailwind, upload library or authentication package.
+Direct dependencies: **Next.js, React, React DOM, and `@supabase/supabase-js`**. Dev dependencies are TypeScript and its type packages, plus `pg` (used only by `npm run migrate` with `DATABASE_URL`). No ORM, UI kit, Tailwind, upload library or authentication package.
+
+## TypeScript
+
+The whole project is **strict TypeScript** (`tsconfig.json` has `"strict": true`), with plain CSS.
+
+- `npm run typecheck` checks every file. `npm run build` also type-checks and fails on errors.
+- `lib/database.types.ts` describes the Supabase tables for the typed client. **When you change a column in `scripts/migrate.sql`, change it there too.** You can also regenerate it with `npx supabase gen types typescript --project-id <your-project-ref> > lib/database.types.ts`.
+- `lib/types.ts` holds the shared app types (settings, collections, entries and the admin data), used by both the server and the admin UI.
+- Scripts and tests are `.ts` files run directly by Node, which strips the types (this is why Node 22.18+ is required). Code that Node runs uses only type syntax that can be erased (no `enum` or `namespace`), and imports between those files keep their `.ts` extension. `tsconfig.json` enforces both.
 
 ## Company → design gallery
 
@@ -110,7 +118,7 @@ Upload limits:
 
 ## Security notes
 
-- The **service-role key** bypasses row-level security. It is read only on the server (`lib/supabase.mjs`); never prefix it with `NEXT_PUBLIC_` or expose it to the browser.
+- The **service-role key** bypasses row-level security. It is read only on the server (`lib/supabase.ts`); never prefix it with `NEXT_PUBLIC_` or expose it to the browser.
 - Row-level security is enabled on every table. With the public anon key, only published collections, images, entries and the site settings can be read; the admin account, sessions, rate limits and enquiries cannot.
 - Admin passwords are salted scrypt hashes. Sessions last 8 hours and are stored as SHA-256 hashes of the cookie token.
 - **Rate limits**: login allows 10 attempts and the contact form 5 submissions per 15 minutes per client. Counting happens atomically in Postgres (`rate_limit_increment`), which only the server's service role may call. If the limit cannot be checked (for example, the migration hasn't been run), login and contact requests are refused with a 503 rather than left unlimited.
@@ -129,7 +137,6 @@ The app keeps no files on its own disk, and uploads and images go directly betwe
    ```dotenv
    APP_ORIGIN=https://your-domain.example
    NEXT_PUBLIC_SUPABASE_URL=...
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=...
    SUPABASE_SERVICE_ROLE_KEY=...
    SUPABASE_STORAGE_BUCKET=portfolio-assets
    TRUST_PROXY=true
@@ -176,14 +183,15 @@ To restore into a fresh project: run `npm run migrate`, upload the contents of `
 ## Verification
 
 ```bash
+npm run typecheck
 npm run build
 npm test
 ```
 
 Tests use Node's built-in runner; no testing package is required.
 
-- `tests/security.test.mjs` checks password hashing, validation, file-type detection and upload limits. It runs offline.
-- `tests/application.test.mjs` starts the production build and exercises every route: login, cross-origin protection, uploads, draft media privacy, publishing, CV replacement, settings, articles, the inbox, rate limiting, deletion and password changes. **It erases all data in the configured Supabase project and replaces the admin account**, so it is skipped unless you point `.env.local` at a separate, disposable Supabase project and run:
+- `tests/security.test.ts` checks password hashing, validation, file-type detection and upload limits. It runs offline.
+- `tests/application.test.ts` starts the production build and exercises every route: login, cross-origin protection, uploads, draft media privacy, publishing, CV replacement, settings, articles, the inbox, rate limiting, deletion and password changes. **It erases all data in the configured Supabase project and replaces the admin account**, so it is skipped unless you point `.env.local` at a separate, disposable Supabase project and run:
 
   ```bash
   SUPABASE_TEST_PROJECT=true npm test
@@ -201,10 +209,13 @@ Browser visual and interaction QA still needs to be done by hand.
 - `app/work/[slug]/`: company galleries.
 - `app/journal/[id]/`: articles.
 - `components/`: public and admin UI.
-- `lib/supabase.mjs`: server-side Supabase clients and bucket name.
-- `lib/db.mjs`: settings, collections, assets, entries and storage helpers.
-- `lib/security.mjs`: sessions, passwords, validation, rate limits.
-- `scripts/migrate.sql` and `scripts/run-migration.mjs`: database schema and the `npm run migrate` runner.
-- `scripts/admin.mjs`: administrator setup and reset.
-- `scripts/backup.mjs`: local backup of tables and files.
+- `lib/supabase.ts`: typed server-side Supabase client and bucket name.
+- `lib/database.types.ts`: Supabase table types (keep in sync with `scripts/migrate.sql`).
+- `lib/types.ts`: shared app types.
+- `lib/client.ts`: small helpers for client components.
+- `lib/db.ts`: settings, collections, assets, entries and storage helpers.
+- `lib/security.ts`: sessions, passwords, validation, rate limits.
+- `scripts/migrate.sql` and `scripts/run-migration.ts`: database schema and the `npm run migrate` runner.
+- `scripts/admin.ts`: administrator setup and reset.
+- `scripts/backup.ts`: local backup of tables and files.
 - `tests/`: security and production-route checks.

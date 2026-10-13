@@ -1,6 +1,28 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
-const tabs = [
+import { useState, useEffect, useCallback, type ReactNode } from "react";
+import {
+  isEntryKind,
+  type AdminData,
+  type AssetKind,
+  type BooleanSettingKey,
+  type Settings,
+  type SocialLink,
+  type TextSettingKey,
+} from "../lib/types.ts";
+import { errorMessage } from "../lib/client.ts";
+
+type Tab =
+  | "overview"
+  | "groups"
+  | "profile"
+  | "service"
+  | "experience"
+  | "award"
+  | "article"
+  | "media"
+  | "inbox"
+  | "settings";
+const tabs: [Tab, string][] = [
   ["overview", "Overview"],
   ["groups", "Work collections"],
   ["profile", "Profile & homepage"],
@@ -12,22 +34,109 @@ const tabs = [
   ["inbox", "Inbox"],
   ["settings", "Site settings"],
 ];
-const kinds = ["service", "experience", "award", "article"];
-const val = (f) => Object.fromEntries(new FormData(f));
-function Field({ label, name, value = "", area = false, type, ...p }) {
+const tabLabel = (t: Tab) => tabs.find((a) => a[0] === t)?.[1] ?? "";
+
+/** Form fields as sent to the API; the server validates every value. */
+type FormValues = Record<string, unknown>;
+const val = (f: HTMLFormElement): FormValues =>
+  Object.fromEntries(new FormData(f));
+
+type Removable = "groups" | "assets" | "entries" | "messages";
+type Orderable = "groups" | "assets" | "entries";
+type ApiResult = { ok?: boolean; id?: string };
+type UploadTicket = { id: string; filename: string; uploadUrl: string };
+
+const profileSections: [string, [TextSettingKey, string, boolean?][]][] = [
+  [
+    "Your introduction",
+    [
+      ["name", "Display name"],
+      ["role", "Professional title"],
+      ["heroTitle", "Main headline", true],
+      ["heroDescription", "Introductory text", true],
+      ["availability", "Availability"],
+      ["specialties", "Specialties (comma separated)"],
+    ],
+  ],
+  [
+    "About you",
+    [
+      ["aboutLabel", "Section label"],
+      ["aboutTitle", "About headline", true],
+      ["aboutIntro", "About introduction", true],
+      ["aboutBody", "Your story", true],
+      ["location", "Location"],
+      ["experience", "Experience summary"],
+    ],
+  ],
+  [
+    "Portfolio & contact",
+    [
+      ["workTitle", "Work section title"],
+      ["workDescription", "Work introduction", true],
+      ["servicesTitle", "Services section title"],
+      ["contactTitle", "Contact headline", true],
+      ["contactDescription", "Contact introduction", true],
+      ["email", "Public email"],
+      ["phone", "Public phone"],
+    ],
+  ],
+];
+const visibleSections: [BooleanSettingKey, string][] = [
+  ["showServices", "Services"],
+  ["showExperience", "Experience"],
+  ["showAwards", "Awards"],
+  ["showArticles", "Articles"],
+];
+const longText: TextSettingKey[] = [
+  "aboutIntro",
+  "aboutBody",
+  "heroDescription",
+  "contactDescription",
+  "workDescription",
+];
+
+type FieldProps = {
+  label: string;
+  name: string;
+  value?: string | number | null;
+  area?: boolean;
+  type?: string;
+  rows?: number;
+  required?: boolean;
+  minLength?: number;
+  maxLength?: number;
+  min?: number;
+  max?: number;
+  pattern?: string;
+  placeholder?: string;
+  autoComplete?: string;
+};
+function Field({
+  label,
+  name,
+  value,
+  area = false,
+  type,
+  rows = 4,
+  min,
+  max,
+  pattern,
+  ...p
+}: FieldProps) {
   const [show, setShow] = useState(false);
   const isPassword = type === "password";
   return (
     <label>
       {label}
       {area ? (
-        <textarea name={name} defaultValue={value} rows={4} {...p} />
+        <textarea name={name} defaultValue={value ?? ""} rows={rows} {...p} />
       ) : isPassword ? (
         <div className="password-wrap">
           <input
             name={name}
             type={show ? "text" : "password"}
-            defaultValue={value}
+            defaultValue={value ?? ""}
             {...p}
           />
           <button
@@ -73,12 +182,28 @@ function Field({ label, name, value = "", area = false, type, ...p }) {
           </button>
         </div>
       ) : (
-        <input name={name} type={type} defaultValue={value} {...p} />
+        <input
+          name={name}
+          type={type}
+          defaultValue={value ?? ""}
+          min={min}
+          max={max}
+          pattern={pattern}
+          {...p}
+        />
       )}
     </label>
   );
 }
-function Check({ label, name, value }) {
+function Check({
+  label,
+  name,
+  value,
+}: {
+  label: string;
+  name: string;
+  value?: boolean | null;
+}) {
   return (
     <label className="check-label">
       <input type="checkbox" name={name} defaultChecked={!!value} />
@@ -86,14 +211,20 @@ function Check({ label, name, value }) {
     </label>
   );
 }
-function Save({ busy, children = "Save changes" }) {
+function Save({
+  busy,
+  children = "Save changes",
+}: {
+  busy: boolean;
+  children?: ReactNode;
+}) {
   return (
     <button className="button dark" disabled={busy}>
       {busy ? "Saving…" : children} ↗
     </button>
   );
 }
-function Empty({ title, children }) {
+function Empty({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="admin-empty">
       <span className="star">✳</span>
@@ -103,9 +234,9 @@ function Empty({ title, children }) {
   );
 }
 export default function Admin() {
-  const [data, setData] = useState(null),
-    [tab, setTab] = useState("overview"),
-    [selected, setSelected] = useState(null),
+  const [data, setData] = useState<AdminData | null>(null),
+    [tab, setTab] = useState<Tab>("overview"),
+    [selected, setSelected] = useState<string | null>(null),
     [busy, setBusy] = useState(false),
     [notice, setNotice] = useState(""),
     [query, setQuery] = useState(""),
@@ -117,28 +248,35 @@ export default function Admin() {
       location.assign("/admin/login");
       return;
     }
-    const v = await r.json();
+    const v = (await r.json()) as AdminData & { error?: string };
     if (!r.ok) throw new Error(v.error);
     setData(v);
   }, []);
   useEffect(() => {
-    load().catch((e) => setNotice(e.message));
+    load().catch((e: unknown) => setNotice(errorMessage(e)));
   }, [load]);
   useEffect(() => {
     if (data) document.body.style.setProperty("--accent", data.settings.accent);
   }, [data]);
-  async function api(url, method = "POST", v) {
+  async function api<T extends object = ApiResult>(
+    url: string,
+    method: "POST" | "PUT" | "DELETE" = "POST",
+    v?: unknown,
+  ): Promise<T> {
     const r = await fetch(url, {
       method,
       headers: { "Content-Type": "application/json" },
       body: v ? JSON.stringify(v) : undefined,
     });
     if (r.status === 401) location.assign("/admin/login");
-    const d = await r.json();
+    const d = (await r.json()) as T & { error?: string };
     if (!r.ok) throw new Error(d.error || "Please try again.");
     return d;
   }
-  async function run(fn, message = "Changes saved.") {
+  async function run<T>(
+    fn: () => Promise<T>,
+    message = "Changes saved.",
+  ): Promise<T | undefined> {
     if (busy) return;
     setBusy(true);
     try {
@@ -147,31 +285,39 @@ export default function Admin() {
       setNotice(message);
       return result;
     } catch (e) {
-      setNotice(e.message);
+      setNotice(errorMessage(e));
     } finally {
       setBusy(false);
     }
   }
-  function go(t, id = null) {
+  function go(t: Tab, id: string | null = null) {
     setTab(t);
     setSelected(id);
     setQuery("");
     setMobile(false);
     window.scrollTo(0, 0);
   }
-  async function remove(type, id, message) {
+  async function remove(type: Removable, id: string, message?: string) {
     if (!confirm(message || "Delete this item permanently?")) return;
     return run(() => api(`/api/admin/${type}/${id}`, "DELETE"), "Deleted.");
   }
-  async function reorder(type, items, i, delta) {
+  async function reorder(
+    type: Orderable,
+    items: { id: string }[],
+    i: number,
+    delta: -1 | 1,
+  ) {
     const ids = items.map((a) => a.id);
-    [ids[i], ids[i + delta]] = [ids[i + delta], ids[i]];
+    const a = ids[i],
+      b = ids[i + delta];
+    if (a === undefined || b === undefined) return;
+    [ids[i], ids[i + delta]] = [b, a];
     return run(
       () => api("/api/admin/reorder", "POST", { resource: type, ids }),
       "Order updated.",
     );
   }
-  async function upload(files, kind, groupId) {
+  async function upload(files: File[], kind: AssetKind, groupId?: string) {
     if (busy || !files.length) return;
     setBusy(true);
     let count = 0;
@@ -186,7 +332,7 @@ export default function Admin() {
         }
         try {
           // 1. ask the server for a one-time upload link
-          const ticket = await api("/api/admin/upload", "POST", {
+          const ticket = await api<UploadTicket>("/api/admin/upload", "POST", {
             kind,
             groupId,
             name: f.name,
@@ -210,7 +356,7 @@ export default function Admin() {
           });
           count++;
         } catch (e) {
-          errors.push(`${f.name}: ${e.message}`);
+          errors.push(`${f.name}: ${errorMessage(e)}`);
         }
       }
       await load();
@@ -218,13 +364,13 @@ export default function Admin() {
         `${count} uploaded.${errors.length ? " " + errors.join("; ") : ""}`,
       );
     } catch (e) {
-      setNotice(e.message);
+      setNotice(errorMessage(e));
     } finally {
       setBusy(false);
       setProgress("");
     }
   }
-  function orderButtons(type, items, i) {
+  function orderButtons(type: Orderable, items: { id: string }[], i: number) {
     return (
       <>
         <button
@@ -254,7 +400,9 @@ export default function Admin() {
             <p role="alert">{notice}</p>
             <button
               className="button"
-              onClick={() => load().catch((e) => setNotice(e.message))}
+              onClick={() =>
+                load().catch((e: unknown) => setNotice(errorMessage(e)))
+              }
             >
               Try again
             </button>
@@ -266,7 +414,8 @@ export default function Admin() {
     g = data.groups.find((a) => a.id === selected),
     images = data.assets.filter((a) => a.group_id === selected),
     entry = data.entries.find((a) => a.id === selected),
-    items = data.entries.filter((a) => a.kind === tab),
+    entryKind = isEntryKind(tab) ? tab : null,
+    items = data.entries.filter((a) => a.kind === entryKind),
     unread = data.messages.filter((a) => !a.is_read).length;
   return (
     <div className="admin-shell">
@@ -303,7 +452,7 @@ export default function Admin() {
                 await api("/api/auth", "DELETE");
                 location.assign("/admin/login");
               } catch (e) {
-                setNotice(e.message);
+                setNotice(errorMessage(e));
               }
             }}
           >
@@ -320,7 +469,7 @@ export default function Admin() {
           >
             ☰ Menu
           </button>
-          <span>Studio / {tabs.find((a) => a[0] === tab)?.[1]}</span>
+          <span>Studio / {tabLabel(tab)}</span>
           <span className="admin-avatar">
             {s.name
               .split(" ")
@@ -338,7 +487,7 @@ export default function Admin() {
                   ? "Your work. Your world."
                   : tab === "groups" && selected
                     ? g?.name || "New collection"
-                    : tabs.find((a) => a[0] === tab)?.[1]}
+                    : tabLabel(tab)}
               </h1>
               <p>
                 {tab === "groups"
@@ -354,7 +503,7 @@ export default function Admin() {
                 + New collection
               </button>
             )}
-            {kinds.includes(tab) && !selected && (
+            {entryKind && !selected && (
               <button
                 className="button dark"
                 onClick={() => setSelected("new")}
@@ -366,20 +515,22 @@ export default function Admin() {
           {tab === "overview" && (
             <>
               <div className="stats-grid">
-                {[
-                  [data.groups.length, "Collections", "groups"],
+                {(
                   [
-                    data.assets.filter((a) => a.kind === "work").length,
-                    "Design uploads",
-                    "groups",
-                  ],
-                  [
-                    data.groups.filter((a) => a.published).length,
-                    "Published",
-                    "groups",
-                  ],
-                  [unread, "Unread enquiries", "inbox"],
-                ].map(([n, l, t]) => (
+                    [data.groups.length, "Collections", "groups"],
+                    [
+                      data.assets.filter((a) => a.kind === "work").length,
+                      "Design uploads",
+                      "groups",
+                    ],
+                    [
+                      data.groups.filter((a) => a.published).length,
+                      "Published",
+                      "groups",
+                    ],
+                    [unread, "Unread enquiries", "inbox"],
+                  ] satisfies [number, string, Tab][]
+                ).map(([n, l, t]) => (
                   <button key={l} onClick={() => go(t)}>
                     <span>{l} ↗</span>
                     <strong>{String(n).padStart(2, "0")}</strong>
@@ -409,12 +560,14 @@ export default function Admin() {
               <div className="two-col">
                 <section className="panel">
                   <h2>Make yourself at home</h2>
-                  {[
-                    ["profile", "Write your introduction"],
-                    ["media", "Add your portrait & CV"],
-                    ["groups", "Publish your first collection"],
-                    ["settings", "Add your social links"],
-                  ].map(([t, l]) => (
+                  {(
+                    [
+                      ["profile", "Write your introduction"],
+                      ["media", "Add your portrait & CV"],
+                      ["groups", "Publish your first collection"],
+                      ["settings", "Add your social links"],
+                    ] satisfies [Tab, string][]
+                  ).map(([t, l]) => (
                     <button
                       className="checklist-item"
                       key={l}
@@ -780,42 +933,7 @@ export default function Admin() {
                 );
               }}
             >
-              {[
-                [
-                  "Your introduction",
-                  [
-                    ["name", "Display name"],
-                    ["role", "Professional title"],
-                    ["heroTitle", "Main headline", true],
-                    ["heroDescription", "Introductory text", true],
-                    ["availability", "Availability"],
-                    ["specialties", "Specialties (comma separated)"],
-                  ],
-                ],
-                [
-                  "About you",
-                  [
-                    ["aboutLabel", "Section label"],
-                    ["aboutTitle", "About headline", true],
-                    ["aboutIntro", "About introduction", true],
-                    ["aboutBody", "Your story", true],
-                    ["location", "Location"],
-                    ["experience", "Experience summary"],
-                  ],
-                ],
-                [
-                  "Portfolio & contact",
-                  [
-                    ["workTitle", "Work section title"],
-                    ["workDescription", "Work introduction", true],
-                    ["servicesTitle", "Services section title"],
-                    ["contactTitle", "Contact headline", true],
-                    ["contactDescription", "Contact introduction", true],
-                    ["email", "Public email"],
-                    ["phone", "Public phone"],
-                  ],
-                ],
-              ].map(([heading, fields]) => (
+              {profileSections.map(([heading, fields]) => (
                 <section className="panel editor-form" key={heading}>
                   <h2>{heading}</h2>
                   {fields.map(([name, label, area]) => (
@@ -826,18 +944,8 @@ export default function Admin() {
                       area={area}
                       value={s[name]}
                       type={name === "email" ? "email" : "text"}
-                      required={["name", "heroTitle"].includes(name)}
-                      maxLength={
-                        [
-                          "aboutIntro",
-                          "aboutBody",
-                          "heroDescription",
-                          "contactDescription",
-                          "workDescription",
-                        ].includes(name)
-                          ? 4000
-                          : 500
-                      }
+                      required={name === "name" || name === "heroTitle"}
+                      maxLength={longText.includes(name) ? 4000 : 500}
                     />
                   ))}
                 </section>
@@ -848,7 +956,7 @@ export default function Admin() {
               </div>
             </form>
           )}
-          {kinds.includes(tab) && (
+          {entryKind && (
             <>
               {selected ? (
                 <>
@@ -868,7 +976,7 @@ export default function Admin() {
                         api(
                           `/api/admin/entries${entry ? "/" + entry.id : ""}`,
                           entry ? "PUT" : "POST",
-                          { ...v, kind: tab, published: !!v.published },
+                          { ...v, kind: entryKind, published: !!v.published },
                         ),
                       );
                       if (r) setSelected(null);
@@ -974,9 +1082,7 @@ export default function Admin() {
                       </article>
                     ))
                   ) : (
-                    <Empty
-                      title={`Add your ${tabs.find((a) => a[0] === tab)[1].toLowerCase()}.`}
-                    >
+                    <Empty title={`Add your ${tabLabel(tab).toLowerCase()}.`}>
                       Optional sections appear once you publish their content.
                     </Empty>
                   )}
@@ -986,10 +1092,12 @@ export default function Admin() {
           )}
           {tab === "media" && (
             <div className="two-col media-panels">
-              {[
-                ["portrait", "Your portrait", "portraitId"],
-                ["cv", "Your CV", "cvId"],
-              ].map(([kind, title, key]) => (
+              {(
+                [
+                  ["portrait", "Your portrait", "portraitId"],
+                  ["cv", "Your CV", "cvId"],
+                ] satisfies [AssetKind, string, "portraitId" | "cvId"][]
+              ).map(([kind, title, key]) => (
                 <section className="panel" key={kind}>
                   <h2>{title}</h2>
                   <p>
@@ -1111,7 +1219,7 @@ export default function Admin() {
           )}
           {tab === "settings" && (
             <>
-              <Settings
+              <SiteSettings
                 s={s}
                 busy={busy}
                 save={(v) => run(() => api("/api/admin/settings", "PUT", v))}
@@ -1198,6 +1306,12 @@ function UploadButton({
   pdf = false,
   onFiles,
   children,
+}: {
+  busy: boolean;
+  multiple?: boolean;
+  pdf?: boolean;
+  onFiles: (files: File[]) => void;
+  children: ReactNode;
 }) {
   return (
     <label className="button dark upload-button">
@@ -1210,28 +1324,30 @@ function UploadButton({
         multiple={multiple}
         disabled={busy}
         onChange={(e) => {
-          onFiles(Array.from(e.target.files));
+          onFiles(Array.from(e.target.files ?? []));
           e.target.value = "";
         }}
       />
     </label>
   );
 }
-function Settings({ s, busy, save }) {
-  const [links, setLinks] = useState(s.socialLinks);
+function SiteSettings({
+  s,
+  busy,
+  save,
+}: {
+  s: Settings;
+  busy: boolean;
+  save: (v: FormValues) => void;
+}) {
+  const [links, setLinks] = useState<SocialLink[]>(s.socialLinks);
   return (
     <form
       className="settings-form"
       onSubmit={(e) => {
         e.preventDefault();
         const v = val(e.currentTarget);
-        for (const k of [
-          "showServices",
-          "showExperience",
-          "showAwards",
-          "showArticles",
-        ])
-          v[k] = !!v[k];
+        for (const [k] of visibleSections) v[k] = !!v[k];
         save({ ...v, socialLinks: links });
       }}
     >
@@ -1270,12 +1386,7 @@ function Settings({ s, busy, save }) {
       <section className="panel editor-form">
         <h2>Visible sections</h2>
         <div className="toggle-grid">
-          {[
-            ["showServices", "Services"],
-            ["showExperience", "Experience"],
-            ["showAwards", "Awards"],
-            ["showArticles", "Articles"],
-          ].map(([name, label]) => (
+          {visibleSections.map(([name, label]) => (
             <Check key={name} name={name} label={label} value={s[name]} />
           ))}
         </div>

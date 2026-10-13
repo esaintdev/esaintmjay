@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { supabase } from "../../../lib/supabase.mjs";
+import { supabase } from "../../../lib/supabase.ts";
 import {
   checkOrigin,
   clientKey,
@@ -7,12 +7,13 @@ import {
   jsonBody,
   text,
   email,
-} from "../../../lib/security.mjs";
+  errorResponse,
+} from "../../../lib/security.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(r) {
+export async function POST(r: Request) {
   try {
     checkOrigin(r);
     await rateLimit(`contact:${clientKey(r)}`, 5, 15 * 60_000);
@@ -36,13 +37,9 @@ export async function POST(r) {
 
     return Response.json({ ok: true });
   } catch (e) {
-    return Response.json(
-      {
-        error: e.status
-          ? e.message
-          : "Your message could not be saved. Please try again.",
-      },
-      { status: e.status || 500 },
+    return errorResponse(
+      e,
+      "Your message could not be saved. Please try again.",
     );
   }
 }

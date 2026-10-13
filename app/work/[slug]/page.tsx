@@ -1,12 +1,16 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { supabase } from "../../../lib/supabase.mjs";
-import { getSettings, groups, assets } from "../../../lib/db.mjs";
-import { authenticated } from "../../../lib/auth";
+import { supabase } from "../../../lib/supabase.ts";
+import { getSettings, groups, assets } from "../../../lib/db.ts";
+import { authenticated } from "../../../lib/auth.ts";
 import { Header, Footer, Star, GroupCard } from "../../../components/Site";
 import Gallery from "../../../components/Gallery";
+import type { Group } from "../../../lib/types.ts";
 
-async function resolve(slug) {
+type Props = { params: Promise<{ slug: string }> };
+
+async function resolve(slug: string): Promise<Group> {
   const { data: g, error } = await supabase()
     .from("groups")
     .select("*")
@@ -16,7 +20,7 @@ async function resolve(slug) {
   return g;
 }
 
-export async function generateMetadata({ params }) {
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const g = await resolve((await params).slug);
   return {
     title: g.name,
@@ -25,7 +29,7 @@ export async function generateMetadata({ params }) {
   };
 }
 
-export default async function Work({ params }) {
+export default async function Work({ params }: Props) {
   const g = await resolve((await params).slug);
   const [s, images, allGroups] = await Promise.all([
     getSettings(),

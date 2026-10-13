@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { GroupSummary, Settings } from "../lib/types.ts";
 export function Star() {
   return (
     <span aria-hidden="true" className="star">
@@ -6,7 +7,7 @@ export function Star() {
     </span>
   );
 }
-export function Header({ settings: s }) {
+export function Header({ settings: s }: { settings: Settings }) {
   return (
     <header className="site-header wrap">
       <Link className="brand" href="/">
@@ -27,7 +28,7 @@ export function Header({ settings: s }) {
     </header>
   );
 }
-export function Footer({ settings: s }) {
+export function Footer({ settings: s }: { settings: Settings }) {
   return (
     <footer className="site-footer wrap">
       <Link className="brand" href="/">
@@ -51,7 +52,15 @@ export function Footer({ settings: s }) {
     </footer>
   );
 }
-export function SectionTitle({ number, title, description }) {
+export function SectionTitle({
+  number,
+  title,
+  description,
+}: {
+  number: string;
+  title: string;
+  description?: string;
+}) {
   return (
     <div className="section-heading">
       <div>
@@ -65,7 +74,13 @@ export function SectionTitle({ number, title, description }) {
     </div>
   );
 }
-export function GroupCard({ group: g, index }) {
+export function GroupCard({
+  group: g,
+  index,
+}: {
+  group: GroupSummary;
+  index: number;
+}) {
   return (
     <Link className="work-card" href={`/work/${g.slug}`}>
       <div className="work-image">
@@ -84,9 +99,7 @@ export function GroupCard({ group: g, index }) {
         <span className="work-open" aria-hidden="true">
           ↗
         </span>
-        {g.featured === 1 && (
-          <span className="badge work-featured">Featured</span>
-        )}
+        {g.featured && <span className="badge work-featured">Featured</span>}
       </div>
       <div className="work-caption">
         <div>

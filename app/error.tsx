@@ -1,5 +1,10 @@
 "use client";
-export default function ErrorPage({ reset }) {
+export default function ErrorPage({
+  reset,
+}: {
+  error: Error & { digest?: string };
+  reset: () => void;
+}) {
   return (
     <main id="main" className="error-page">
       <h1>Something interrupted the page.</h1>

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * scripts/run-migration.mjs
+ * scripts/run-migration.ts
  * Executes migrate.sql against Supabase.
  * Supports:
  *   1. Supabase Management API via SUPABASE_ACCESS_TOKEN (recommended, bypasses IPv6 / firewall issues)
@@ -14,26 +14,35 @@ const dbUrl = process.env.DATABASE_URL;
 
 const bucket = process.env.SUPABASE_STORAGE_BUCKET || "portfolio-assets";
 if (!/^[a-z0-9][a-z0-9._-]{1,62}$/.test(bucket)) {
-  console.error("SUPABASE_STORAGE_BUCKET may only contain lowercase letters, numbers, dots, hyphens and underscores.");
+  console.error(
+    "SUPABASE_STORAGE_BUCKET may only contain lowercase letters, numbers, dots, hyphens and underscores.",
+  );
   process.exit(1);
 }
-const sql = readFileSync(new URL("./migrate.sql", import.meta.url), "utf8")
-  .replaceAll("'portfolio-assets'", `'${bucket}'`);
+const sql = readFileSync(
+  new URL("./migrate.sql", import.meta.url),
+  "utf8",
+).replaceAll("'portfolio-assets'", `'${bucket}'`);
 
 if (token && url) {
   const match = url.match(/https:\/\/([^.]+)\./);
   const ref = match ? match[1] : null;
 
   if (ref) {
-    console.log(`Executing migration via Supabase Management API for project ${ref}...`);
-    const res = await fetch(`https://api.supabase.com/v1/projects/${ref}/database/query`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
+    console.log(
+      `Executing migration via Supabase Management API for project ${ref}...`,
+    );
+    const res = await fetch(
+      `https://api.supabase.com/v1/projects/${ref}/database/query`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query: sql }),
       },
-      body: JSON.stringify({ query: sql }),
-    });
+    );
 
     if (!res.ok) {
       const err = await res.text();
@@ -50,17 +59,27 @@ if (dbUrl) {
   console.log("Executing migration via DATABASE_URL...");
   try {
     const { default: pg } = await import("pg");
-    const client = new pg.Client({ connectionString: dbUrl, ssl: { rejectUnauthorized: false } });
+    const client = new pg.Client({
+      connectionString: dbUrl,
+      ssl: { rejectUnauthorized: false },
+    });
     await client.connect();
     await client.query(sql);
     await client.end();
-    console.log("Migration executed successfully via direct database connection.");
+    console.log(
+      "Migration executed successfully via direct database connection.",
+    );
     process.exit(0);
   } catch (err) {
-    console.error("Migration via direct connection failed:", err.message);
+    console.error(
+      "Migration via direct connection failed:",
+      err instanceof Error ? err.message : err,
+    );
     process.exit(1);
   }
 }
 
-console.error("Please provide SUPABASE_ACCESS_TOKEN or DATABASE_URL in .env.local to run migrations.");
+console.error(
+  "Please provide SUPABASE_ACCESS_TOKEN or DATABASE_URL in .env.local to run migrations.",
+);
 process.exit(1);
