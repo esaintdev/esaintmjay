@@ -3,15 +3,15 @@ import { useState, useEffect, useCallback, type ReactNode } from "react";
 import {
   isEntryKind,
   type AdminData,
-  type AssetKind,
   type BooleanSettingKey,
   type Settings,
   type SocialLink,
   type TextSettingKey,
 } from "../lib/types.ts";
-import { errorMessage, apiCall, uploadFile } from "../lib/client.ts";
+import { errorMessage, apiCall } from "../lib/client.ts";
 import { useConfirm } from "./ConfirmModal";
 import ArticleEditor from "./ArticleEditor";
+import { useUploadQueue, UploadList } from "./UploadQueue";
 import { articlePath, formatDate } from "../lib/seo.ts";
 
 type Tab =
@@ -245,7 +245,6 @@ export default function Admin() {
     [busy, setBusy] = useState(false),
     [notice, setNotice] = useState(""),
     [query, setQuery] = useState(""),
-    [progress, setProgress] = useState(""),
     [mobile, setMobile] = useState(false);
   const { confirm: confirmModal, ConfirmModal: confirmModalElement } =
     useConfirm();
@@ -323,32 +322,22 @@ export default function Admin() {
       "Order updated.",
     );
   }
-  async function upload(files: File[], kind: AssetKind, groupId?: string) {
-    if (busy || !files.length) return;
-    setBusy(true);
-    let count = 0;
-    const errors = [];
-    try {
-      for (let i = 0; i < files.length; i++) {
-        const f = files[i];
-        setProgress(`Uploading ${i + 1} of ${files.length}: ${f.name}`);
-        try {
-          await uploadFile(f, kind, { groupId });
-          count++;
-        } catch (e) {
-          errors.push(`${f.name}: ${errorMessage(e)}`);
-        }
-      }
-      await load();
-      setNotice(
-        `${count} uploaded.${errors.length ? " " + errors.join("; ") : ""}`,
-      );
-    } catch (e) {
-      setNotice(errorMessage(e));
-    } finally {
-      setBusy(false);
-      setProgress("");
-    }
+  const queues = {
+    work: useUploadQueue(),
+    portrait: useUploadQueue(),
+    cv: useUploadQueue(),
+  };
+  type QueueKind = keyof typeof queues;
+  async function upload(files: File[], kind: QueueKind, groupId?: string) {
+    if (!files.length) return;
+    const ids = await queues[kind].run(files, kind, { groupId });
+    await load().catch((e: unknown) => setNotice(errorMessage(e)));
+    const failed = files.length - ids.length;
+    setNotice(
+      failed
+        ? `${ids.length} of ${files.length} uploaded. See the upload list for what went wrong.`
+        : `${ids.length} uploaded.`,
+    );
   }
   function orderButtons(type: Orderable, items: { id: string }[], i: number) {
     return (
@@ -827,14 +816,17 @@ export default function Admin() {
                       </p>
                     </div>
                     <UploadButton
-                      busy={busy}
+                      busy={busy || queues.work.active}
                       multiple
                       onFiles={(f) => upload(f, "work", g.id)}
                     >
                       Upload designs
                     </UploadButton>
                   </div>
-                  {progress && <p role="status">{progress}</p>}
+                  <UploadList
+                    queue={queues.work}
+                    onRetried={() => void load()}
+                  />
                   {images.length ? (
                     <div className="image-editor-grid">
                       {images.map((a, i) => (
@@ -1124,7 +1116,7 @@ export default function Admin() {
                 [
                   ["portrait", "Your portrait", "portraitId"],
                   ["cv", "Your CV", "cvId"],
-                ] satisfies [AssetKind, string, "portraitId" | "cvId"][]
+                ] satisfies ["portrait" | "cv", string, "portraitId" | "cvId"][]
               ).map(([kind, title, key]) => (
                 <section className="panel" key={kind}>
                   <h2>{title}</h2>
@@ -1160,7 +1152,7 @@ export default function Admin() {
                     </div>
                   )}
                   <UploadButton
-                    busy={busy}
+                    busy={busy || queues[kind].active}
                     pdf={kind === "cv"}
                     onFiles={(f) => upload(f, kind)}
                   >
@@ -1183,7 +1175,10 @@ export default function Admin() {
                       Remove {kind}
                     </button>
                   )}
-                  {progress && <p role="status">{progress}</p>}
+                  <UploadList
+                    queue={queues[kind]}
+                    onRetried={() => void load()}
+                  />
                 </section>
               ))}
             </div>

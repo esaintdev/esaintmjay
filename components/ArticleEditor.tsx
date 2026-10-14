@@ -13,7 +13,7 @@ import {
   readingMinutes,
 } from "../lib/richtext.ts";
 import { describe } from "../lib/seo.ts";
-import { errorMessage, uploadFile } from "../lib/client.ts";
+import { useUploadQueue, UploadList } from "./UploadQueue";
 
 type SaveResult = { id?: string; slug?: string } | undefined;
 
@@ -57,7 +57,6 @@ export default function ArticleEditor({
     ),
     [coverId, setCoverId] = useState(entry?.cover_id ?? ""),
     [published, setPublished] = useState(entry?.published ?? false),
-    [uploading, setUploading] = useState(""),
     [text, setText] = useState(entry?.body ?? "");
   const imageInput = useRef<HTMLInputElement>(null),
     coverInput = useRef<HTMLInputElement>(null);
@@ -86,32 +85,31 @@ export default function ArticleEditor({
     onUpdate: ({ editor: e }) => setText(e.getText()),
   });
 
-  async function addImage(file: File) {
-    if (!editor) return;
-    setUploading(`Uploading ${file.name}…`);
-    try {
-      const id = await uploadFile(file, "article", { entryId: entry?.id });
-      editor
-        .chain()
-        .focus()
-        .setImage({ src: `/media/${id}`, alt: altFromName(file.name) })
-        .run();
-    } catch (e) {
-      notify(`${file.name}: ${errorMessage(e)}`);
-    } finally {
-      setUploading("");
-    }
+  const imageQueue = useUploadQueue(),
+    coverQueue = useUploadQueue();
+  const uploading = imageQueue.active || coverQueue.active;
+
+  function insertImage(id: string, name = "") {
+    editor
+      ?.chain()
+      .focus()
+      .setImage({ src: `/media/${id}`, alt: altFromName(name) })
+      .run();
+  }
+
+  async function addImages(files: File[]) {
+    const ids = await imageQueue.run(files, "article", { entryId: entry?.id });
+    // insert in the order chosen; failed files stay in the list to retry
+    for (const id of ids) insertImage(id);
+    if (ids.length < files.length)
+      notify("Some images didn't upload. Retry them from the list.");
   }
 
   async function setCover(file: File) {
-    setUploading(`Uploading ${file.name}…`);
-    try {
-      setCoverId(await uploadFile(file, "article", { entryId: entry?.id }));
-    } catch (e) {
-      notify(`${file.name}: ${errorMessage(e)}`);
-    } finally {
-      setUploading("");
-    }
+    const [id] = await coverQueue.run([file], "article", {
+      entryId: entry?.id,
+    });
+    if (id) setCoverId(id);
   }
 
   function editLink(e: Editor) {
@@ -219,24 +217,30 @@ export default function ArticleEditor({
               onLink={() => editLink(editor)}
               onImage={() => imageInput.current?.click()}
               onImageText={() => editImageText(editor)}
-              disabled={!!uploading}
+              disabled={uploading}
             />
           )}
           <input
             ref={imageInput}
             type="file"
             hidden
+            multiple
             accept="image/png,image/jpeg,image/webp,image/gif"
             onChange={(e) => {
-              const f = e.target.files?.[0];
+              const files = Array.from(e.target.files ?? []);
               e.target.value = "";
-              if (f) void addImage(f);
+              if (files.length) void addImages(files);
             }}
           />
+          <div className="editor-uploads">
+            <UploadList
+              queue={imageQueue}
+              onRetried={(id) => insertImage(id)}
+            />
+          </div>
           <EditorContent editor={editor} />
           <p className="field-help editor-status" role="status">
-            {uploading ||
-              `${text.split(/\s+/).filter(Boolean).length} words · about ${minutes} min read`}
+            {`${text.split(/\s+/).filter(Boolean).length} words · about ${minutes} min read`}
           </p>
         </section>
       </div>
@@ -276,7 +280,7 @@ export default function ArticleEditor({
           </label>
           <p className="field-help">/journal/{shownSlug}</p>
           <div className="form-actions">
-            <button className="button dark" disabled={busy || !!uploading}>
+            <button className="button dark" disabled={busy || uploading}>
               {busy ? "Saving…" : entry ? "Save article" : "Create article"} ↗
             </button>
             {entry && (
@@ -321,7 +325,7 @@ export default function ArticleEditor({
             <button
               type="button"
               className="button"
-              disabled={!!uploading}
+              disabled={uploading}
               onClick={() => coverInput.current?.click()}
             >
               {coverId ? "Replace cover" : "Upload cover"} ↑
@@ -336,6 +340,7 @@ export default function ArticleEditor({
               </button>
             )}
           </div>
+          <UploadList queue={coverQueue} onRetried={setCoverId} />
           <p className="field-help">Landscape works best, e.g. 1600 × 900.</p>
         </section>
 
