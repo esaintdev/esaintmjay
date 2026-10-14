@@ -81,8 +81,13 @@ const profileSections: [string, [TextSettingKey, string, boolean?][]][] = [
       ["journalDescription", "Journal introduction", true],
       ["contactTitle", "Contact headline", true],
       ["contactDescription", "Contact introduction", true],
-      ["email", "Public email"],
-      ["phone", "Public phone"],
+    ],
+  ],
+  [
+    "Contact details (shown on your site)",
+    [
+      ["email", "Public email — shown in the footer and on the Contact page"],
+      ["phone", "Public phone — shown in the footer and on the Contact page"],
     ],
   ],
 ];
@@ -532,6 +537,12 @@ export default function Admin() {
                   {(
                     [
                       ["profile", "Write your introduction"],
+                      [
+                        "profile",
+                        s.email || s.phone
+                          ? "Check your public email & phone"
+                          : "Add your public email & phone (not shown yet)",
+                      ],
                       ["media", "Add your portrait & CV"],
                       ["groups", "Publish your first collection"],
                       ["settings", "Add your social links"],

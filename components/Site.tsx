@@ -38,6 +38,14 @@ export function Footer({ settings: s }: { settings: Settings }) {
         {s.name}
         <b>.</b>
       </Link>
+      <address className="footer-contact">
+        {s.email && <a href={`mailto:${s.email}`}>{s.email}</a>}
+        {s.phone && (
+          <a href={`tel:${s.phone.replace(/[^\d+]/g, "")}`}>{s.phone}</a>
+        )}
+        {s.location && <span>{s.location}</span>}
+        <Link href="/contact">Send a message ↗</Link>
+      </address>
       <div className="socials">
         {s.socialLinks.map((l) => (
           <a key={l.url} href={l.url} target="_blank" rel="noopener noreferrer">
