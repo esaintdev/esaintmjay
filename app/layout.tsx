@@ -1,8 +1,10 @@
 import "./globals.css";
+import "lenis/dist/lenis.css";
 import type { CSSProperties, ReactNode } from "react";
 import type { Metadata } from "next";
 import { Sofia_Sans } from "next/font/google";
 import { getSettings } from "../lib/db.ts";
+import SmoothScroll from "../components/SmoothScroll";
 
 const sofiaSans = Sofia_Sans({
   subsets: ["latin"],
@@ -30,10 +32,12 @@ export default async function Layout({ children }: { children: ReactNode }) {
         style={{ "--accent": s.accent } as CSSProperties}
         suppressHydrationWarning
       >
-        <a className="skip-link" href="#main">
-          Skip to content
-        </a>
-        {children}
+        <SmoothScroll>
+          <a className="skip-link" href="#main">
+            Skip to content
+          </a>
+          {children}
+        </SmoothScroll>
       </body>
     </html>
   );

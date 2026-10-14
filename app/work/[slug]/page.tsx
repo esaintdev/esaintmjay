@@ -36,7 +36,7 @@ export default async function Work({ params }: Props) {
     assets(g.id),
     groups(),
   ]);
-  const more = allGroups.filter((a) => a.id !== g.id).slice(0, 2);
+  const more = allGroups.filter((a) => a.id !== g.id).slice(0, 4);
 
   return (
     <div id="top">

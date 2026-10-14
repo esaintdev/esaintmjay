@@ -10,6 +10,7 @@ import {
   type TextSettingKey,
 } from "../lib/types.ts";
 import { errorMessage } from "../lib/client.ts";
+import { useConfirm } from "./ConfirmModal";
 
 type Tab =
   | "overview"
@@ -242,6 +243,8 @@ export default function Admin() {
     [query, setQuery] = useState(""),
     [progress, setProgress] = useState(""),
     [mobile, setMobile] = useState(false);
+  const { confirm: confirmModal, ConfirmModal: confirmModalElement } =
+    useConfirm();
   const load = useCallback(async () => {
     const r = await fetch("/api/admin", { cache: "no-store" });
     if (r.status === 401) {
@@ -298,7 +301,16 @@ export default function Admin() {
     window.scrollTo(0, 0);
   }
   async function remove(type: Removable, id: string, message?: string) {
-    if (!confirm(message || "Delete this item permanently?")) return;
+    const ok = await confirmModal({
+      title: "Confirm Deletion",
+      message:
+        message ||
+        "Are you sure you want to permanently delete this item? This action cannot be undone.",
+      confirmLabel: "Delete permanently",
+      cancelLabel: "Cancel",
+      destructive: true,
+    });
+    if (!ok) return;
     return run(() => api(`/api/admin/${type}/${id}`, "DELETE"), "Deleted.");
   }
   async function reorder(
@@ -1297,6 +1309,7 @@ export default function Admin() {
           </button>
         </div>
       )}
+      {confirmModalElement}
     </div>
   );
 }

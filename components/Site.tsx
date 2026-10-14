@@ -115,3 +115,6 @@ export function GroupCard({
     </Link>
   );
 }
+
+export { default as ConfirmModal, useConfirm } from "./ConfirmModal";
+export type { ConfirmOptions, ConfirmModalProps } from "./ConfirmModal";
