@@ -898,6 +898,20 @@ p {
 .socials a:hover {
   text-decoration: underline;
 }
+.footer-contact {
+  display: flex;
+  gap: 8px 25px;
+  flex-wrap: wrap;
+  font-size: 16px;
+  font-style: normal;
+}
+.footer-contact a {
+  border-bottom: 1px solid currentColor;
+  overflow-wrap: anywhere;
+}
+.footer-contact span {
+  color: var(--muted);
+}
 .footer-bottom {
   width: 100%;
   display: flex;
