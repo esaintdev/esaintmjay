@@ -3134,3 +3134,28 @@ p {
     background-position: 0 0;
   }
 }
+
+/* Position box next to the ↑ ↓ buttons (admin ordering) */
+.position-input {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.position-input input {
+  width: 64px;
+  min-height: 42px;
+  padding: 6px 8px;
+  text-align: center;
+  font-size: 15px;
+  color: var(--ink);
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.position-input input::-webkit-outer-spin-button,
+.position-input input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}

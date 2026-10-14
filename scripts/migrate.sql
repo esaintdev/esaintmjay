@@ -143,6 +143,35 @@ GRANT EXECUTE ON FUNCTION rate_limit_increment(TEXT, BIGINT) TO service_role;
 
 
 -- =============================================================
+-- Reorder in one statement: item i of p_ids gets sort_order i.
+-- Called by the admin reorder route.
+-- =============================================================
+CREATE OR REPLACE FUNCTION reorder_items(p_table TEXT, p_ids TEXT[])
+RETURNS INTEGER
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+DECLARE
+  v_count INTEGER;
+BEGIN
+  IF p_table NOT IN ('groups', 'assets', 'entries') THEN
+    RAISE EXCEPTION 'reorder_items: unknown table %', p_table;
+  END IF;
+  EXECUTE format(
+    'UPDATE %I AS t SET sort_order = o.ord - 1
+       FROM unnest($1) WITH ORDINALITY AS o(id, ord)
+      WHERE t.id = o.id', p_table)
+  USING p_ids;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION reorder_items(TEXT, TEXT[]) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION reorder_items(TEXT, TEXT[]) TO service_role;
+
+
+-- =============================================================
 -- Row-Level Security (RLS)
 -- All mutations happen via the service-role key (server-only),
 -- so RLS primarily protects against leaked anon-key access.
