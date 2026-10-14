@@ -45,6 +45,9 @@ export const defaults: Settings = {
   workDescription:
     "A closer look at the brands, teams, and projects I design for.",
   servicesTitle: "What I do",
+  journalTitle: "Thoughts & process",
+  journalDescription:
+    "Notes from the studio on design, process, and the ideas behind the work.",
   contactTitle: "Have something\nin mind?",
   contactDescription:
     "Tell me about your brand, your idea, or your next chapter. Let's make something worth seeing.",
@@ -174,6 +177,45 @@ export async function entries(kind: EntryKind, all = false): Promise<Entry[]> {
     .order("created_at", { ascending: false });
   check(error, "entries");
   return data ?? [];
+}
+
+// ─── articles ─────────────────────────────────────────────────────────────────
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Published articles, newest first. */
+export async function articles(limit?: number): Promise<Entry[]> {
+  let q = supabase()
+    .from("entries")
+    .select("*")
+    .eq("kind", "article")
+    .eq("published", true)
+    .order("published_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false });
+  if (limit) q = q.limit(limit);
+  const { data, error } = await q;
+  check(error, "articles");
+  return data ?? [];
+}
+
+/** An article by slug, or by id for links made before slugs existed. */
+export async function findArticle(slugOrId: string): Promise<Entry | null> {
+  const bySlug = await supabase()
+    .from("entries")
+    .select("*")
+    .eq("kind", "article")
+    .eq("slug", slugOrId)
+    .maybeSingle();
+  check(bySlug.error, "findArticle");
+  if (bySlug.data || !uuidPattern.test(slugOrId)) return bySlug.data;
+  const byId = await supabase()
+    .from("entries")
+    .select("*")
+    .eq("kind", "article")
+    .eq("id", slugOrId)
+    .maybeSingle();
+  check(byId.error, "findArticle");
+  return byId.data;
 }
 
 // ─── generic find ─────────────────────────────────────────────────────────────

@@ -21,6 +21,7 @@ export function Header({ settings: s }: { settings: Settings }) {
         <Link href="/work">Work</Link>
         <Link href="/about">About</Link>
         {s.showServices && <Link href="/services">Services</Link>}
+        {s.showArticles && <Link href="/journal">Journal</Link>}
         <Link href="/contact">Contact</Link>
       </nav>
       <Link className="button" href="/contact">

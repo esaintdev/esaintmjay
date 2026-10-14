@@ -21,6 +21,7 @@ function ScrollMotionObserver() {
       ".editorial-list > article",
       ".award-list > article",
       ".article-list > a",
+      ".journal-card",
       ".about-section > div",
       ".contact-layout > div",
       ".contact-form",

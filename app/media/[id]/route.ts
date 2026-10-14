@@ -20,8 +20,8 @@ const REUSE_SECONDS = 300;
 /**
  * Sends the visitor to a short-lived signed link for a file in the private
  * Supabase Storage bucket. The bucket is never exposed directly: a link is
- * issued only if the file belongs to a published collection, is the current
- * portrait/CV, or the visitor is the signed-in admin. Unpublishing stops new
+ * issued only if the file belongs to a published collection or article, is
+ * the current portrait/CV, or the visitor is the signed-in admin. Unpublishing stops new
  * links at once; links already issued expire within LINK_SECONDS.
  *
  * Redirecting (rather than streaming the file through this function) keeps
@@ -36,7 +36,7 @@ export async function GET(
 
   const { data: a, error } = await supabase()
     .from("assets")
-    .select("filename, kind, group_id")
+    .select("filename, kind, group_id, entry_id")
     .eq("id", id)
     .maybeSingle();
   if (error || !a) return notFound();
@@ -50,6 +50,15 @@ export async function GET(
       .eq("published", true)
       .maybeSingle();
     publicFile = !!grp;
+  } else if (a.entry_id) {
+    // article cover and in-text images follow the article's publication
+    const { data: entry } = await supabase()
+      .from("entries")
+      .select("id")
+      .eq("id", a.entry_id)
+      .eq("published", true)
+      .maybeSingle();
+    publicFile = !!entry;
   } else {
     const s = await getSettings();
     publicFile = [s.cvId, s.portraitId].includes(id);

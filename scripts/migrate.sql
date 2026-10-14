@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS groups (
 CREATE TABLE IF NOT EXISTS assets (
   id          TEXT    PRIMARY KEY DEFAULT gen_random_uuid()::text,
   group_id    TEXT    REFERENCES groups(id) ON DELETE CASCADE,
-  kind        TEXT    NOT NULL,           -- 'work' | 'portrait' | 'cv'
+  kind        TEXT    NOT NULL,           -- 'work' | 'portrait' | 'cv' | 'article'
   filename    TEXT    NOT NULL,           -- storage object path
   mime        TEXT    NOT NULL,
   bytes       INTEGER NOT NULL,
@@ -78,6 +78,24 @@ CREATE TABLE IF NOT EXISTS entries (
 );
 
 CREATE INDEX IF NOT EXISTS entries_kind ON entries (kind, sort_order);
+
+-- Article fields (unused by the other entry kinds). Added with ALTER so
+-- existing databases are upgraded when the migration is run again.
+ALTER TABLE entries ADD COLUMN IF NOT EXISTS slug            TEXT NOT NULL DEFAULT '';
+ALTER TABLE entries ADD COLUMN IF NOT EXISTS cover_id        TEXT NOT NULL DEFAULT '';
+ALTER TABLE entries ADD COLUMN IF NOT EXISTS seo_title       TEXT NOT NULL DEFAULT '';
+ALTER TABLE entries ADD COLUMN IF NOT EXISTS seo_description TEXT NOT NULL DEFAULT '';
+ALTER TABLE entries ADD COLUMN IF NOT EXISTS content         JSONB;           -- rich text document
+ALTER TABLE entries ADD COLUMN IF NOT EXISTS published_at    TIMESTAMPTZ;     -- first publication
+
+-- Article URLs (/journal/<slug>) must be unique
+CREATE UNIQUE INDEX IF NOT EXISTS entries_article_slug
+  ON entries (slug) WHERE kind = 'article' AND slug <> '';
+
+-- Images that belong to an article (cover and in-text images). They are
+-- public only while the article is published.
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS entry_id TEXT REFERENCES entries(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS assets_entry ON assets (entry_id);
 
 -- ── messages (contact form submissions) ───────────────────────
 CREATE TABLE IF NOT EXISTS messages (

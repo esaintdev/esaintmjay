@@ -76,6 +76,7 @@ export type Database = {
         Row: {
           id: string;
           group_id: string | null;
+          entry_id: string | null;
           kind: string;
           filename: string;
           mime: string;
@@ -88,6 +89,7 @@ export type Database = {
         Insert: {
           id?: string;
           group_id?: string | null;
+          entry_id?: string | null;
           kind: string;
           filename: string;
           mime: string;
@@ -106,6 +108,13 @@ export type Database = {
             referencedRelation: "groups";
             referencedColumns: ["id"];
           },
+          {
+            foreignKeyName: "assets_entry_id_fkey";
+            columns: ["entry_id"];
+            isOneToOne: false;
+            referencedRelation: "entries";
+            referencedColumns: ["id"];
+          },
         ];
       };
       entries: {
@@ -119,6 +128,12 @@ export type Database = {
           published: boolean;
           sort_order: number;
           created_at: string;
+          slug: string;
+          cover_id: string;
+          seo_title: string;
+          seo_description: string;
+          content: Json | null;
+          published_at: string | null;
         };
         Insert: {
           id?: string;
@@ -130,6 +145,12 @@ export type Database = {
           published?: boolean;
           sort_order?: number;
           created_at?: string;
+          slug?: string;
+          cover_id?: string;
+          seo_title?: string;
+          seo_description?: string;
+          content?: Json | null;
+          published_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["entries"]["Insert"]>;
         Relationships: [];
