@@ -184,6 +184,10 @@ export type Database = {
         Args: { p_key: string; p_period: number };
         Returns: number;
       };
+      reorder_items: {
+        Args: { p_table: string; p_ids: string[] };
+        Returns: number;
+      };
     };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };

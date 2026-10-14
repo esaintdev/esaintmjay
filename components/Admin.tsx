@@ -1,5 +1,11 @@
 "use client";
-import { useState, useEffect, useCallback, type ReactNode } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  type ReactNode,
+} from "react";
 import {
   isEntryKind,
   type AdminData,
@@ -105,6 +111,72 @@ const longText: TextSettingKey[] = [
   "contactDescription",
   "workDescription",
 ];
+
+/** Applies a new order locally, matching how the server sorts each list. */
+function applyOrder(d: AdminData, type: Orderable, ids: string[]): AdminData {
+  const pos = new Map(ids.map((id, n) => [id, n]));
+  const reorderList = <T extends { id: string; sort_order: number }>(
+    list: T[],
+    tie: (a: T, b: T) => number,
+  ) =>
+    list
+      .map((x) =>
+        pos.has(x.id) ? { ...x, sort_order: pos.get(x.id) ?? 0 } : x,
+      )
+      .sort((a, b) => a.sort_order - b.sort_order || tie(a, b));
+  const newestFirst = (a: { created_at: string }, b: { created_at: string }) =>
+    b.created_at.localeCompare(a.created_at);
+  if (type === "groups")
+    return { ...d, groups: reorderList(d.groups, newestFirst) };
+  if (type === "entries")
+    return { ...d, entries: reorderList(d.entries, newestFirst) };
+  return {
+    ...d,
+    assets: reorderList(d.assets, (a, b) => a.id.localeCompare(b.id)),
+  };
+}
+
+/** A position box (1, 2, 3…) that moves the item when a new number is entered. */
+function PositionInput({
+  index,
+  count,
+  onMove,
+}: {
+  index: number;
+  count: number;
+  onMove: (to: number) => void;
+}) {
+  const [value, setValue] = useState(String(index + 1));
+  useEffect(() => setValue(String(index + 1)), [index]);
+  const commit = () => {
+    const n = Number.parseInt(value, 10);
+    if (Number.isInteger(n) && n >= 1 && n - 1 !== index)
+      onMove(Math.min(n, count) - 1);
+    else setValue(String(index + 1));
+  };
+  return (
+    <label className="position-input">
+      <span className="sr-only">Position (1 to {count})</span>
+      <input
+        type="number"
+        inputMode="numeric"
+        min={1}
+        max={count}
+        value={value}
+        title={`Position: type 1 to ${count} and press Enter`}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit();
+          } else if (e.key === "Escape") setValue(String(index + 1));
+        }}
+      />
+      <span aria-hidden="true">/ {count}</span>
+    </label>
+  );
+}
 
 type FieldProps = {
   label: string;
@@ -311,21 +383,27 @@ export default function Admin() {
     if (!ok) return;
     return run(() => api(`/api/admin/${type}/${id}`, "DELETE"), "Deleted.");
   }
-  async function reorder(
+  // Saves run one after another so quick clicks can't land out of order.
+  const orderSaves = useRef<Promise<unknown>>(Promise.resolve());
+  /** Moves items[from] to position `to`: shown at once, saved in the background. */
+  function move(
     type: Orderable,
     items: { id: string }[],
-    i: number,
-    delta: -1 | 1,
+    from: number,
+    to: number,
   ) {
+    const target = Math.max(0, Math.min(items.length - 1, to));
+    if (target === from || !items[from]) return;
     const ids = items.map((a) => a.id);
-    const a = ids[i],
-      b = ids[i + delta];
-    if (a === undefined || b === undefined) return;
-    [ids[i], ids[i + delta]] = [b, a];
-    return run(
-      () => api("/api/admin/reorder", "POST", { resource: type, ids }),
-      "Order updated.",
-    );
+    const [moved] = ids.splice(from, 1);
+    ids.splice(target, 0, moved as string);
+    setData((d) => (d ? applyOrder(d, type, ids) : d));
+    orderSaves.current = orderSaves.current
+      .then(() => api("/api/admin/reorder", "POST", { resource: type, ids }))
+      .catch(async (e: unknown) => {
+        setNotice(`The new order wasn't saved: ${errorMessage(e)}`);
+        await load().catch(() => {});
+      });
   }
   const queues = {
     work: useUploadQueue(),
@@ -347,17 +425,22 @@ export default function Admin() {
   function orderButtons(type: Orderable, items: { id: string }[], i: number) {
     return (
       <>
+        <PositionInput
+          index={i}
+          count={items.length}
+          onMove={(to) => move(type, items, i, to)}
+        />
         <button
-          disabled={busy || i === 0}
+          disabled={i === 0}
           aria-label="Move earlier"
-          onClick={() => reorder(type, items, i, -1)}
+          onClick={() => move(type, items, i, i - 1)}
         >
           ↑
         </button>
         <button
-          disabled={busy || i === items.length - 1}
+          disabled={i === items.length - 1}
           aria-label="Move later"
-          onClick={() => reorder(type, items, i, 1)}
+          onClick={() => move(type, items, i, i + 1)}
         >
           ↓
         </button>
@@ -844,10 +927,9 @@ export default function Admin() {
                         <article className="image-editor" key={a.id}>
                           <img src={`/media/${a.id}`} alt={a.alt} />
                           <div className="row-actions image-tools">
-                            <span>
-                              {i + 1}
-                              {g.cover_id === a.id ? " / Cover" : ""}
-                            </span>
+                            {g.cover_id === a.id && (
+                              <span className="badge">Cover</span>
+                            )}
                             {orderButtons("assets", images, i)}
                             <button
                               className="danger-text"

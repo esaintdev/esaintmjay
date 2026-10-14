@@ -662,6 +662,7 @@ const setOrder = {
 };
 const orderable = Object.keys(setOrder) as (keyof typeof setOrder)[];
 
+/** body: { resource, ids } — ids in their new order; position i gets sort_order i. */
 async function reorder(v: Body) {
   const table = orderable.find((t) => t === v.resource);
   const ids = v.ids;
@@ -673,12 +674,29 @@ async function reorder(v: Body) {
     new Set(ids).size !== ids.length
   )
     throw new HttpError("Invalid ordering.");
+  if (!ids.length) return { ok: true };
 
+  // One statement for the whole list (reorder_items in migrate.sql).
+  const { data, error } = await supabase().rpc("reorder_items", {
+    p_table: table,
+    p_ids: ids,
+  });
+  if (!error) {
+    if (data !== ids.length)
+      throw new HttpError(
+        "Some items no longer exist. Reload and try again.",
+        409,
+      );
+    return { ok: true };
+  }
+
+  // Before `npm run migrate` adds the function: update all rows at once.
+  console.warn(
+    "[reorder] reorder_items unavailable, using row updates:",
+    error.message,
+  );
   await Promise.all(
-    ids.map(async (itemId, i) => {
-      await findById(table, itemId);
-      await written(setOrder[table](itemId, i));
-    }),
+    ids.map((itemId, i) => written(setOrder[table](itemId, i))),
   );
   return { ok: true };
 }
