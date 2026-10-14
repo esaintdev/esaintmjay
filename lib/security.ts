@@ -161,10 +161,10 @@ export async function readBody(r: Request, limit = 100_000): Promise<Buffer> {
 /** A JSON object body. Field values are unchecked: validate each one. */
 export type Body = Record<string, unknown>;
 
-export async function jsonBody(r: Request): Promise<Body> {
+export async function jsonBody(r: Request, limit?: number): Promise<Body> {
   let v: unknown;
   try {
-    v = JSON.parse((await readBody(r)).toString());
+    v = JSON.parse((await readBody(r, limit)).toString());
   } catch (e) {
     if (e instanceof HttpError) throw e;
     throw new HttpError("Invalid request data.");

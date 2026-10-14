@@ -3,14 +3,16 @@ import { useState, useEffect, useCallback, type ReactNode } from "react";
 import {
   isEntryKind,
   type AdminData,
-  type AssetKind,
   type BooleanSettingKey,
   type Settings,
   type SocialLink,
   type TextSettingKey,
 } from "../lib/types.ts";
-import { errorMessage } from "../lib/client.ts";
+import { errorMessage, apiCall } from "../lib/client.ts";
 import { useConfirm } from "./ConfirmModal";
+import ArticleEditor from "./ArticleEditor";
+import { useUploadQueue, UploadList } from "./UploadQueue";
+import { articlePath, formatDate } from "../lib/seo.ts";
 
 type Tab =
   | "overview"
@@ -45,7 +47,6 @@ const val = (f: HTMLFormElement): FormValues =>
 type Removable = "groups" | "assets" | "entries" | "messages";
 type Orderable = "groups" | "assets" | "entries";
 type ApiResult = { ok?: boolean; id?: string };
-type UploadTicket = { id: string; filename: string; uploadUrl: string };
 
 const profileSections: [string, [TextSettingKey, string, boolean?][]][] = [
   [
@@ -76,6 +77,8 @@ const profileSections: [string, [TextSettingKey, string, boolean?][]][] = [
       ["workTitle", "Work section title"],
       ["workDescription", "Work introduction", true],
       ["servicesTitle", "Services section title"],
+      ["journalTitle", "Journal title"],
+      ["journalDescription", "Journal introduction", true],
       ["contactTitle", "Contact headline", true],
       ["contactDescription", "Contact introduction", true],
       ["email", "Public email"],
@@ -90,6 +93,7 @@ const visibleSections: [BooleanSettingKey, string][] = [
   ["showArticles", "Articles"],
 ];
 const longText: TextSettingKey[] = [
+  "journalDescription",
   "aboutIntro",
   "aboutBody",
   "heroDescription",
@@ -241,7 +245,6 @@ export default function Admin() {
     [busy, setBusy] = useState(false),
     [notice, setNotice] = useState(""),
     [query, setQuery] = useState(""),
-    [progress, setProgress] = useState(""),
     [mobile, setMobile] = useState(false);
   const { confirm: confirmModal, ConfirmModal: confirmModalElement } =
     useConfirm();
@@ -261,21 +264,11 @@ export default function Admin() {
   useEffect(() => {
     if (data) document.body.style.setProperty("--accent", data.settings.accent);
   }, [data]);
-  async function api<T extends object = ApiResult>(
+  const api = <T extends object = ApiResult>(
     url: string,
     method: "POST" | "PUT" | "DELETE" = "POST",
     v?: unknown,
-  ): Promise<T> {
-    const r = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: v ? JSON.stringify(v) : undefined,
-    });
-    if (r.status === 401) location.assign("/admin/login");
-    const d = (await r.json()) as T & { error?: string };
-    if (!r.ok) throw new Error(d.error || "Please try again.");
-    return d;
-  }
+  ): Promise<T> => apiCall<T>(url, method, v);
   async function run<T>(
     fn: () => Promise<T>,
     message = "Changes saved.",
@@ -329,58 +322,22 @@ export default function Admin() {
       "Order updated.",
     );
   }
-  async function upload(files: File[], kind: AssetKind, groupId?: string) {
-    if (busy || !files.length) return;
-    setBusy(true);
-    let count = 0;
-    const errors = [];
-    try {
-      for (let i = 0; i < files.length; i++) {
-        const f = files[i];
-        setProgress(`Uploading ${i + 1} of ${files.length}: ${f.name}`);
-        if (f.size > (kind === "cv" ? 10 : 15) * 1024 * 1024) {
-          errors.push(`${f.name}: file too large`);
-          continue;
-        }
-        try {
-          // 1. ask the server for a one-time upload link
-          const ticket = await api<UploadTicket>("/api/admin/upload", "POST", {
-            kind,
-            groupId,
-            name: f.name,
-            type: f.type,
-            size: f.size,
-          });
-          // 2. send the file straight to Supabase Storage
-          const put = await fetch(ticket.uploadUrl, {
-            method: "PUT",
-            headers: { "Content-Type": f.type },
-            body: f,
-          });
-          if (!put.ok) throw new Error("The upload failed. Please try again.");
-          // 3. let the server check the file and add it to the portfolio
-          await api("/api/admin/upload/complete", "POST", {
-            id: ticket.id,
-            filename: ticket.filename,
-            kind,
-            groupId,
-            name: f.name,
-          });
-          count++;
-        } catch (e) {
-          errors.push(`${f.name}: ${errorMessage(e)}`);
-        }
-      }
-      await load();
-      setNotice(
-        `${count} uploaded.${errors.length ? " " + errors.join("; ") : ""}`,
-      );
-    } catch (e) {
-      setNotice(errorMessage(e));
-    } finally {
-      setBusy(false);
-      setProgress("");
-    }
+  const queues = {
+    work: useUploadQueue(),
+    portrait: useUploadQueue(),
+    cv: useUploadQueue(),
+  };
+  type QueueKind = keyof typeof queues;
+  async function upload(files: File[], kind: QueueKind, groupId?: string) {
+    if (!files.length) return;
+    const ids = await queues[kind].run(files, kind, { groupId });
+    await load().catch((e: unknown) => setNotice(errorMessage(e)));
+    const failed = files.length - ids.length;
+    setNotice(
+      failed
+        ? `${ids.length} of ${files.length} uploaded. See the upload list for what went wrong.`
+        : `${ids.length} uploaded.`,
+    );
   }
   function orderButtons(type: Orderable, items: { id: string }[], i: number) {
     return (
@@ -859,14 +816,17 @@ export default function Admin() {
                       </p>
                     </div>
                     <UploadButton
-                      busy={busy}
+                      busy={busy || queues.work.active}
                       multiple
                       onFiles={(f) => upload(f, "work", g.id)}
                     >
                       Upload designs
                     </UploadButton>
                   </div>
-                  {progress && <p role="status">{progress}</p>}
+                  <UploadList
+                    queue={queues.work}
+                    onRetried={() => void load()}
+                  />
                   {images.length ? (
                     <div className="image-editor-grid">
                       {images.map((a, i) => (
@@ -978,93 +938,118 @@ export default function Admin() {
                   >
                     ← Back to list
                   </button>
-                  <form
-                    className="panel editor-form entry-form"
-                    key={selected}
-                    onSubmit={async (e) => {
-                      e.preventDefault();
-                      const v = val(e.currentTarget);
-                      const r = await run(() =>
-                        api(
-                          `/api/admin/entries${entry ? "/" + entry.id : ""}`,
-                          entry ? "PUT" : "POST",
-                          { ...v, kind: entryKind, published: !!v.published },
-                        ),
-                      );
-                      if (r) setSelected(null);
-                    }}
-                  >
-                    <h2>
-                      {entry ? "Edit" : "Add"} {tab}
-                    </h2>
-                    <Field
-                      label={tab === "experience" ? "Position / role" : "Title"}
-                      name="title"
-                      value={entry?.title}
-                      required
-                      maxLength={200}
+                  {entryKind === "article" ? (
+                    <ArticleEditor
+                      key={selected}
+                      entry={entry}
+                      busy={busy}
+                      notify={setNotice}
+                      onSave={async (payload) => {
+                        const r = await run(
+                          () =>
+                            api<ApiResult & { slug?: string }>(
+                              `/api/admin/entries${entry ? "/" + entry.id : ""}`,
+                              entry ? "PUT" : "POST",
+                              payload,
+                            ),
+                          entry ? "Article saved." : "Article created.",
+                        );
+                        // keep editing the new article after its first save
+                        if (r?.id && !entry) setSelected(r.id);
+                        return r;
+                      }}
                     />
-                    <Field
-                      label={
-                        tab === "article"
-                          ? "Short introduction"
-                          : tab === "experience"
-                            ? "Company / workplace"
-                            : "Subtitle / organisation"
-                      }
-                      name="subtitle"
-                      value={entry?.subtitle}
-                      maxLength={300}
-                    />
-                    <Field
-                      label={
-                        tab === "article"
-                          ? "Article body (blank lines separate paragraphs)"
-                          : "Description"
-                      }
-                      name="body"
-                      value={entry?.body}
-                      area
-                      rows={tab === "article" ? 14 : 5}
-                      maxLength={30000}
-                    />
-                    <div className="two-col">
+                  ) : (
+                    <form
+                      className="panel editor-form entry-form"
+                      key={selected}
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        const v = val(e.currentTarget);
+                        const r = await run(() =>
+                          api(
+                            `/api/admin/entries${entry ? "/" + entry.id : ""}`,
+                            entry ? "PUT" : "POST",
+                            { ...v, kind: entryKind, published: !!v.published },
+                          ),
+                        );
+                        if (r) setSelected(null);
+                      }}
+                    >
+                      <h2>
+                        {entry ? "Edit" : "Add"} {tab}
+                      </h2>
                       <Field
                         label={
-                          tab === "article"
-                            ? "Category / date"
-                            : "Year / additional label"
+                          tab === "experience" ? "Position / role" : "Title"
                         }
-                        name="extra"
-                        value={entry?.extra}
+                        name="title"
+                        value={entry?.title}
+                        required
                         maxLength={200}
                       />
                       <Field
-                        label="Display order"
-                        name="sort_order"
-                        type="number"
-                        value={entry?.sort_order ?? items.length}
+                        label={
+                          tab === "article"
+                            ? "Short introduction"
+                            : tab === "experience"
+                              ? "Company / workplace"
+                              : "Subtitle / organisation"
+                        }
+                        name="subtitle"
+                        value={entry?.subtitle}
+                        maxLength={300}
                       />
-                    </div>
-                    <Check
-                      label="Published"
-                      name="published"
-                      value={entry?.published}
-                    />
-                    <div className="form-actions">
-                      <Save busy={busy} />
-                      {entry && tab === "article" && (
-                        <a
-                          className="text-link"
-                          href={`/journal/${entry.id}`}
-                          target="_blank"
-                          rel="noopener"
-                        >
-                          Preview ↗
-                        </a>
-                      )}
-                    </div>
-                  </form>
+                      <Field
+                        label={
+                          tab === "article"
+                            ? "Article body (blank lines separate paragraphs)"
+                            : "Description"
+                        }
+                        name="body"
+                        value={entry?.body}
+                        area
+                        rows={tab === "article" ? 14 : 5}
+                        maxLength={30000}
+                      />
+                      <div className="two-col">
+                        <Field
+                          label={
+                            tab === "article"
+                              ? "Category / date"
+                              : "Year / additional label"
+                          }
+                          name="extra"
+                          value={entry?.extra}
+                          maxLength={200}
+                        />
+                        <Field
+                          label="Display order"
+                          name="sort_order"
+                          type="number"
+                          value={entry?.sort_order ?? items.length}
+                        />
+                      </div>
+                      <Check
+                        label="Published"
+                        name="published"
+                        value={entry?.published}
+                      />
+                      <div className="form-actions">
+                        <Save busy={busy} />
+                        {entry && tab === "article" && (
+                          <a
+                            className="text-link"
+                            href={`/journal/${entry.id}`}
+                            target="_blank"
+                            rel="noopener"
+                          >
+                            Preview ↗
+                          </a>
+                        )}
+                      </div>
+                    </form>
+                  )}
                 </>
               ) : (
                 <section className="panel">
@@ -1077,16 +1062,39 @@ export default function Admin() {
                           </span>
                           <h2>{a.title}</h2>
                           <p>{a.subtitle || a.body.slice(0, 130)}</p>
+                          {a.kind === "article" && a.published_at && (
+                            <p className="field-help">
+                              Published {formatDate(a.published_at)} ·{" "}
+                              <a
+                                className="text-link"
+                                href={articlePath(a)}
+                                target="_blank"
+                                rel="noopener"
+                              >
+                                View ↗
+                              </a>
+                            </p>
+                          )}
                         </div>
                         <div className="row-actions">
-                          {orderButtons("entries", items, i)}
+                          {/* articles are listed newest first, not by hand */}
+                          {a.kind !== "article" &&
+                            orderButtons("entries", items, i)}
                           <button onClick={() => setSelected(a.id)}>
                             Edit ↗
                           </button>
                           <button
                             className="danger-text"
                             disabled={busy}
-                            onClick={() => remove("entries", a.id)}
+                            onClick={() =>
+                              remove(
+                                "entries",
+                                a.id,
+                                a.kind === "article"
+                                  ? `Delete “${a.title}” and its images permanently?`
+                                  : undefined,
+                              )
+                            }
                           >
                             Delete
                           </button>
@@ -1108,7 +1116,7 @@ export default function Admin() {
                 [
                   ["portrait", "Your portrait", "portraitId"],
                   ["cv", "Your CV", "cvId"],
-                ] satisfies [AssetKind, string, "portraitId" | "cvId"][]
+                ] satisfies ["portrait" | "cv", string, "portraitId" | "cvId"][]
               ).map(([kind, title, key]) => (
                 <section className="panel" key={kind}>
                   <h2>{title}</h2>
@@ -1144,7 +1152,7 @@ export default function Admin() {
                     </div>
                   )}
                   <UploadButton
-                    busy={busy}
+                    busy={busy || queues[kind].active}
                     pdf={kind === "cv"}
                     onFiles={(f) => upload(f, kind)}
                   >
@@ -1167,7 +1175,10 @@ export default function Admin() {
                       Remove {kind}
                     </button>
                   )}
-                  {progress && <p role="status">{progress}</p>}
+                  <UploadList
+                    queue={queues[kind]}
+                    onRetried={() => void load()}
+                  />
                 </section>
               ))}
             </div>

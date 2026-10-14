@@ -8,7 +8,8 @@ import {
   findById,
   groups,
   storageUploadUrl,
-  storageInspect,
+  storageStat,
+  storageHead,
   storageDelete,
 } from "../../../../lib/db.ts";
 import { requireAdmin } from "../../../../lib/auth.ts";
@@ -25,8 +26,10 @@ import {
   passwordHash,
   type Body,
 } from "../../../../lib/security.ts";
+import { sanitizeDoc, plainText, imageIds } from "../../../../lib/richtext.ts";
 import {
   isEntryKind,
+  type Entry,
   type AdminData,
   type AssetKind,
   type Settings,
@@ -63,6 +66,7 @@ const uploadKinds: Record<AssetKind, { max: number; mimes: string[] }> = {
   work: { max: 15 * 1024 * 1024, mimes: imageMimes },
   portrait: { max: 15 * 1024 * 1024, mimes: imageMimes },
   cv: { max: 10 * 1024 * 1024, mimes: ["application/pdf"] },
+  article: { max: 15 * 1024 * 1024, mimes: imageMimes },
 };
 const isAssetKind = (v: unknown): v is AssetKind =>
   typeof v === "string" && Object.hasOwn(uploadKinds, v);
@@ -135,7 +139,14 @@ async function mutate(request: Request, { params }: Context, method: Method) {
     checkOrigin(request);
     await requireAdmin();
     const [resource, id] = (await params).path ?? [];
-    const v: Body = method === "DELETE" ? {} : await jsonBody(request);
+    // articles carry their whole rich text document, so allow a larger body
+    const v: Body =
+      method === "DELETE"
+        ? {}
+        : await jsonBody(
+            request,
+            resource === "entries" ? 2_000_000 : undefined,
+          );
 
     if (resource === "upload" && method === "POST")
       return reply(
@@ -189,6 +200,12 @@ async function completeUpload(v: Body) {
     rule = uploadKinds[kind];
   const groupId =
     kind === "work" ? (await findById("groups", v.groupId)).id : null;
+  // Article images may be uploaded before the article is first saved; saving
+  // the article then links the images it uses (see linkArticleImages).
+  const entryId =
+    kind === "article" && v.entryId
+      ? (await findArticleEntry(v.entryId)).id
+      : null;
 
   const assetId = String(v.id ?? "");
   const ext =
@@ -210,11 +227,23 @@ async function completeUpload(v: Body) {
     .maybeSingle();
   if (taken) throw new HttpError("Invalid upload.");
 
-  // Check what actually arrived in storage: size and file signature.
-  const stored = await storageInspect(filename);
+  // Check what actually arrived in storage: its size and real format.
+  const started = Date.now();
+  const stored = await storageStat(filename);
   if (!stored)
     throw new HttpError("The upload did not finish. Please try again.");
-  const type = fileType(stored.head);
+  const head = await storageHead(filename);
+  // The file's first bytes are its real format. If they can't be read in
+  // time, fall back to the type stored with the file, which the bucket
+  // already limits to images and PDF (see migrate.sql).
+  const type = head
+    ? fileType(head)
+    : stored.mime in extensions
+      ? { mime: stored.mime, ext: extensions[stored.mime] ?? "" }
+      : null;
+  console.info(
+    `[upload] ${filename}: ${(stored.size / 1048576).toFixed(1)} MB checked in ${Date.now() - started} ms${head ? "" : " (type from file record)"}`,
+  );
   if (
     !type ||
     type.ext !== ext ||
@@ -242,6 +271,7 @@ async function completeUpload(v: Body) {
   const { error: insertErr } = await supabase().from("assets").insert({
     id: assetId,
     group_id: groupId,
+    entry_id: entryId,
     kind,
     filename,
     mime: type.mime,
@@ -256,7 +286,7 @@ async function completeUpload(v: Body) {
   }
 
   // portrait or CV: point settings at the new file and remove the old one
-  if (kind !== "work") {
+  if (kind === "cv" || kind === "portrait") {
     const key = kind === "cv" ? "cvId" : "portraitId";
     const oldId = (await getSettings())[key];
     let oldFilename: string | undefined;
@@ -278,6 +308,7 @@ async function completeUpload(v: Body) {
 
 // ── settings ──────────────────────────────────────────────────────────────────
 const longText = new Set<string>([
+  "journalDescription",
   "aboutBody",
   "aboutIntro",
   "heroDescription",
@@ -440,17 +471,135 @@ async function saveAsset(method: Method, id: string | undefined, v: Body) {
 }
 
 // ── entries ───────────────────────────────────────────────────────────────────
+async function findArticleEntry(id: unknown) {
+  const e = await findById("entries", id);
+  if (e.kind !== "article")
+    throw new HttpError("This item no longer exists.", 404);
+  return e;
+}
+
+/** Files of the images that belong to an article. */
+async function articleImageFiles(entryId: string): Promise<string[]> {
+  const { data, error } = await supabase()
+    .from("assets")
+    .select("filename")
+    .eq("entry_id", entryId);
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((a) => a.filename);
+}
+
+/**
+ * Makes the article own exactly the images it uses (cover + in-text):
+ * links newly uploaded ones, and deletes ones it no longer uses.
+ */
+async function linkArticleImages(entryId: string, used: string[]) {
+  if (used.length) {
+    // only this article's images or not-yet-linked article uploads
+    const { data: found, error } = await supabase()
+      .from("assets")
+      .select("id, entry_id")
+      .eq("kind", "article")
+      .in("id", used);
+    if (error) throw new Error(error.message);
+    const free = (found ?? [])
+      .filter((a) => a.entry_id === null)
+      .map((a) => a.id);
+    if (free.length)
+      await written(
+        supabase().from("assets").update({ entry_id: entryId }).in("id", free),
+      );
+  }
+
+  const { data: owned, error } = await supabase()
+    .from("assets")
+    .select("id, filename")
+    .eq("entry_id", entryId);
+  if (error) throw new Error(error.message);
+  const unused = (owned ?? []).filter((a) => !used.includes(a.id));
+  if (unused.length) {
+    await written(
+      supabase()
+        .from("assets")
+        .delete()
+        .in(
+          "id",
+          unused.map((a) => a.id),
+        ),
+    );
+    for (const a of unused) await storageDelete(a.filename);
+  }
+}
+
+const slugify = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 120)
+    .replace(/-$/, "");
+
+/** Article-only fields: URL slug, cover, SEO and the rich text document. */
+async function articleFields(v: Body, previous: Entry | null, title: string) {
+  const slug = text(v.slug, 140) || slugify(title) || randomUUID();
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug))
+    throw new HttpError(
+      "Use lowercase letters, numbers, and hyphens for the URL slug.",
+    );
+  const { data: clash } = await supabase()
+    .from("entries")
+    .select("id")
+    .eq("kind", "article")
+    .eq("slug", slug)
+    .neq("id", previous?.id ?? "")
+    .maybeSingle();
+  if (clash) throw new HttpError("Another article already uses that URL slug.");
+
+  // null when the editor is empty; anything unreadable is an error
+  const content = sanitizeDoc(v.content);
+  if (
+    v.content != null &&
+    !content &&
+    (v.content as { type?: unknown }).type !== "doc"
+  )
+    throw new HttpError("The article content could not be read.");
+
+  const cover = text(v.cover_id, 100);
+  if (cover && !uuid.test(cover))
+    throw new HttpError("Choose a cover image again.");
+
+  const published = flag(v.published);
+  return {
+    slug,
+    cover_id: cover,
+    seo_title: text(v.seo_title, 70),
+    seo_description: text(v.seo_description, 200),
+    content,
+    body: plainText(content).slice(0, 100_000),
+    published_at:
+      previous?.published_at ?? (published ? new Date().toISOString() : null),
+    used: [...new Set([...imageIds(content), ...(cover ? [cover] : [])])],
+  };
+}
+
 async function saveEntry(method: Method, id: string | undefined, v: Body) {
   if (method === "DELETE") {
     const e = await findById("entries", id);
-    await written(supabase().from("entries").delete().eq("id", e.id));
+    const files = e.kind === "article" ? await articleImageFiles(e.id) : [];
+    await written(supabase().from("entries").delete().eq("id", e.id)); // cascade deletes image rows
+    for (const f of files) await storageDelete(f);
     return { ok: true };
   }
   if (!isEntryKind(v.kind)) throw new HttpError("Unknown content section.");
 
+  const previous = method === "PUT" ? await findById("entries", id) : null;
+  if (previous && previous.kind !== v.kind)
+    throw new HttpError("Unknown content section.");
+  const title = text(v.title, 200, true);
   const payload = {
     kind: v.kind,
-    title: text(v.title, 200, true),
+    title,
     subtitle: text(v.subtitle, 300),
     body: text(v.body, 30000),
     extra: text(v.extra, 200),
@@ -458,21 +607,33 @@ async function saveEntry(method: Method, id: string | undefined, v: Body) {
     sort_order: order(v.sort_order),
   };
 
-  if (method === "PUT") {
-    const e = await findById("entries", id);
-    await written(supabase().from("entries").update(payload).eq("id", e.id));
+  const article =
+    v.kind === "article" ? await articleFields(v, previous, title) : null;
+  const row = article
+    ? {
+        ...payload,
+        slug: article.slug,
+        cover_id: article.cover_id,
+        seo_title: article.seo_title,
+        seo_description: article.seo_description,
+        content: article.content,
+        body: article.body,
+        published_at: article.published_at,
+      }
+    : payload;
+
+  const entryId = previous?.id ?? randomUUID();
+  if (previous) {
+    await written(supabase().from("entries").update(row).eq("id", entryId));
   } else {
     await written(
       supabase()
         .from("entries")
-        .insert({
-          ...payload,
-          id: randomUUID(),
-          created_at: new Date().toISOString(),
-        }),
+        .insert({ ...row, id: entryId, created_at: new Date().toISOString() }),
     );
   }
-  return { ok: true };
+  if (article) await linkArticleImages(entryId, article.used);
+  return { ok: true, id: entryId, slug: article?.slug };
 }
 
 // ── messages ──────────────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import { getSettings, groups, assets } from "../../../lib/db.ts";
 import { authenticated } from "../../../lib/auth.ts";
 import { Header, Footer, Star, GroupCard } from "../../../components/Site";
 import Gallery from "../../../components/Gallery";
+import { describe } from "../../../lib/seo.ts";
 import type { Group } from "../../../lib/types.ts";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -22,10 +23,27 @@ async function resolve(slug: string): Promise<Group> {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const g = await resolve((await params).slug);
+  const description = describe(g.description || `${g.name} — ${g.category}`);
+  const images = g.cover_id
+    ? [{ url: `/media/${g.cover_id}`, alt: g.name }]
+    : [];
   return {
     title: g.name,
-    description: g.description.slice(0, 160),
+    description,
+    alternates: { canonical: `/work/${g.slug}` },
     robots: g.published ? undefined : { index: false, follow: false },
+    openGraph: {
+      type: "website",
+      title: g.name,
+      description,
+      url: `/work/${g.slug}`,
+      images,
+    },
+    twitter: {
+      card: images.length ? "summary_large_image" : "summary",
+      title: g.name,
+      description,
+    },
   };
 }
 

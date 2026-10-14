@@ -26,6 +26,8 @@ export type Settings = {
   workTitle: string;
   workDescription: string;
   servicesTitle: string;
+  journalTitle: string;
+  journalDescription: string;
   contactTitle: string;
   contactDescription: string;
   footerNote: string;
@@ -57,7 +59,7 @@ export type EntryKind = (typeof entryKinds)[number];
 export const isEntryKind = (v: unknown): v is EntryKind =>
   typeof v === "string" && (entryKinds as readonly string[]).includes(v);
 
-export type AssetKind = "work" | "portrait" | "cv";
+export type AssetKind = "work" | "portrait" | "cv" | "article";
 
 export type Group = Row<"groups">;
 export type Asset = Row<"assets">;

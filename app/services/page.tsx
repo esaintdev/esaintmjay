@@ -9,16 +9,16 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata(): Promise<Metadata> {
   const s = await getSettings();
   return {
-    title: `Services — ${s.name}`,
-    description: s.servicesTitle || `Creative capabilities and services provided by ${s.name}`,
+    title: "Services",
+    alternates: { canonical: "/services" },
+    description:
+      s.servicesTitle ||
+      `Creative capabilities and services provided by ${s.name}`,
   };
 }
 
 export default async function ServicesPage() {
-  const [s, services] = await Promise.all([
-    getSettings(),
-    entries("service"),
-  ]);
+  const [s, services] = await Promise.all([getSettings(), entries("service")]);
 
   return (
     <div id="top">

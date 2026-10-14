@@ -8,7 +8,8 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata(): Promise<Metadata> {
   const s = await getSettings();
   return {
-    title: `About — ${s.name}`,
+    title: "About",
+    alternates: { canonical: "/about" },
     description: s.aboutIntro || s.aboutBody.slice(0, 160) || `About ${s.name}`,
   };
 }
@@ -24,7 +25,10 @@ export default async function AboutPage() {
     <div id="top">
       <Header settings={s} />
       <main id="main">
-        <section id="about" className="about-section section wrap page-top-section">
+        <section
+          id="about"
+          className="about-section section wrap page-top-section"
+        >
           <div>
             <p className="eyebrow">
               <Star />

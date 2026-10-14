@@ -9,7 +9,8 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata(): Promise<Metadata> {
   const s = await getSettings();
   return {
-    title: `Contact — ${s.name}`,
+    title: "Contact",
+    alternates: { canonical: "/contact" },
     description: s.contactDescription || `Get in touch with ${s.name}`,
   };
 }

@@ -1,8 +1,17 @@
 import Link from "next/link";
-import { getSettings, groups, entries } from "../lib/db.ts";
+import {
+  getSettings,
+  groups,
+  entries,
+  articles as latestArticles,
+} from "../lib/db.ts";
+import { articlePath } from "../lib/seo.ts";
 import { Header, Footer, Star, SectionTitle } from "../components/Site";
+import type { Metadata } from "next";
 import WorkGrid from "../components/WorkGrid";
 import Contact from "../components/Contact";
+export const metadata: Metadata = { alternates: { canonical: "/" } };
+
 export default async function Home() {
   const [s, work, services, awards, experience, articles] = await Promise.all([
     getSettings(),
@@ -10,7 +19,7 @@ export default async function Home() {
     entries("service"),
     entries("award"),
     entries("experience"),
-    entries("article"),
+    latestArticles(3),
   ]);
   return (
     <div id="top">
@@ -207,11 +216,12 @@ export default async function Home() {
           <section className="section wrap">
             <SectionTitle
               number="Notes from the studio"
-              title="Thoughts & process"
+              title={s.journalTitle}
+              description={s.journalDescription}
             />
             <div className="article-list">
               {articles.map((e) => (
-                <Link href={`/journal/${e.id}`} key={e.id}>
+                <Link href={articlePath(e)} key={e.id}>
                   <div>
                     <p className="eyebrow">{e.extra || "Design notes"}</p>
                     <h3>{e.title}</h3>
@@ -221,6 +231,11 @@ export default async function Home() {
                 </Link>
               ))}
             </div>
+            <p className="section-more">
+              <Link className="text-link" href="/journal">
+                All articles ↗
+              </Link>
+            </p>
           </section>
         )}
         <section id="contact" className="contact-section">

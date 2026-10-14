@@ -46,7 +46,7 @@ npm run dev
 
 Open `http://localhost:3000`. Sign in at `http://localhost:3000/admin` using the account created by the setup command. Setup prompts for your email and a password of at least 12 characters, with hidden password input. For non-interactive environments, set `ADMIN_EMAIL` and `ADMIN_PASSWORD` instead. There is no default password or public registration endpoint.
 
-Direct dependencies: **Next.js, React, React DOM, and `@supabase/supabase-js`**. Dev dependencies are TypeScript and its type packages, plus `pg` (used only by `npm run migrate` with `DATABASE_URL`). No ORM, UI kit, Tailwind, upload library or authentication package.
+Direct dependencies: **Next.js, React, React DOM, `@supabase/supabase-js`, Lenis** (smooth scrolling) and **Tiptap** (the article editor). Dev dependencies are TypeScript and its type packages, plus `pg` (used only by `npm run migrate` with `DATABASE_URL`). No ORM, UI kit, Tailwind, upload library or authentication package.
 
 ## TypeScript
 
@@ -69,13 +69,30 @@ The whole project is **strict TypeScript** (`tsconfig.json` has `"strict": true`
 
 All portfolio images belong to a group. Draft groups and their media remain private. Deleting a group requires confirmation and deletes its image records and files. Changing the slug changes the public URL.
 
+## Journal (articles)
+
+Write articles in **Admin → Articles**. The editor has:
+
+- Formatting: headings, bold, italic, underline, strikethrough, links, bulleted and numbered lists, quotes, dividers, undo/redo.
+- **Images inside the text**: click **Image** in the toolbar. Select an image and click **Alt & caption** to describe it (for screen readers and search engines) and add a caption.
+- A **cover image**, shown at the top of the article, on article cards, and as the preview image when the link is shared.
+- **URL**: each article lives at `/journal/<slug>`. Leave it blank to create it from the title. Changing it changes the article's address.
+- **Search & sharing**: optional SEO title (~60 characters) and meta description (~160 characters), with a live search-result preview. When left blank, the title and short introduction are used.
+- Drafts: unpublished articles and their images are visible only to you while signed in, through **Preview**.
+
+On the site, articles are listed newest first at **/journal** (in the menu when **Site settings → Visible sections → Articles** is on), and the latest three appear on the homepage. Edit the Journal title and introduction under **Profile & homepage**.
+
+Each article page includes a canonical URL, Open Graph and Twitter tags (with the cover image), and `BlogPosting` structured data. The site also serves `/sitemap.xml` (pages, published collections and articles) and `/robots.txt`, which keeps `/admin` and the API out of search engines. Submit `https://your-domain/sitemap.xml` in Google Search Console once the site is live.
+
+Article text is stored as structured JSON, not HTML. The server keeps only known formatting, safe links (`https`, `mailto`, or paths on this site) and images uploaded to this site, and the page renders only those, so pasted content can't inject scripts or styles. Images removed from an article are deleted when it is saved, and deleting an article deletes its images.
+
 ## Administration included
 
 - Live overview counts and collection search.
 - Full company/group CRUD, image uploads, covers, captions, ordering, featured indicator, draft/publish controls, and authenticated preview.
 - Profile and homepage text, availability, specialties, About text, location, and experience summary.
-- Services, experience, awards, and articles: CRUD, ordering, and draft/publish controls.
-- Dedicated article reading pages. Blank lines create paragraphs; no unsafe HTML is rendered.
+- Services, experience and awards: CRUD, ordering, and draft/publish controls.
+- Journal articles with a full writing editor (see below).
 - Portrait upload, replacement, and removal.
 - PDF CV upload, replacement, removal, and public download buttons.
 - Contact form and private inbox with read/unread controls, deletion, and email reply links.
@@ -190,7 +207,7 @@ npm test
 
 Tests use Node's built-in runner; no testing package is required.
 
-- `tests/security.test.ts` checks password hashing, validation, file-type detection and upload limits. It runs offline.
+- `tests/security.test.ts` checks password hashing, validation, file-type detection and upload limits, and `tests/richtext.test.ts` checks that article content is cleaned of scripts, unsafe links and outside images. Both run offline.
 - `tests/application.test.ts` starts the production build and exercises every route: login, cross-origin protection, uploads, draft media privacy, publishing, CV replacement, settings, articles, the inbox, rate limiting, deletion and password changes. **It erases all data in the configured Supabase project and replaces the admin account**, so it is skipped unless you point `.env.local` at a separate, disposable Supabase project and run:
 
   ```bash
@@ -207,12 +224,17 @@ Browser visual and interaction QA still needs to be done by hand.
 - `app/api/contact/`: public enquiry submission.
 - `app/media/[id]/`: publication-aware redirects to signed links for files in the private bucket.
 - `app/work/[slug]/`: company galleries.
-- `app/journal/[id]/`: articles.
+- `app/journal/`: article list and `[slug]` article pages.
+- `app/sitemap.ts`, `app/robots.ts`: `/sitemap.xml` and `/robots.txt`.
+- `components/ArticleEditor.tsx`: the admin article editor (Tiptap).
+- `components/RichText.tsx`: renders article content on the site.
 - `components/`: public and admin UI.
 - `lib/supabase.ts`: typed server-side Supabase client and bucket name.
 - `lib/database.types.ts`: Supabase table types (keep in sync with `scripts/migrate.sql`).
 - `lib/types.ts`: shared app types.
-- `lib/client.ts`: small helpers for client components.
+- `lib/client.ts`: admin API and upload helpers for client components.
+- `lib/richtext.ts`: article content format, sanitizer and text helpers.
+- `lib/seo.ts`: URLs, descriptions and dates for metadata.
 - `lib/db.ts`: settings, collections, assets, entries and storage helpers.
 - `lib/security.ts`: sessions, passwords, validation, rate limits.
 - `scripts/migrate.sql` and `scripts/run-migration.ts`: database schema and the `npm run migrate` runner.
