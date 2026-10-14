@@ -3007,3 +3007,99 @@ p {
     margin-top: -10px;
   }
 }
+
+/* ─── Upload progress (admin) ──────────────────────────────────────────── */
+.upload-list {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0;
+}
+.editor-uploads .upload-list {
+  margin: 0;
+  padding: 14px 30px 0;
+}
+.upload-summary {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+}
+.upload-item {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  background: #fff;
+  font-size: 15px;
+}
+.upload-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.upload-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.upload-size,
+.upload-status {
+  color: var(--muted);
+  white-space: nowrap;
+}
+.upload-status {
+  white-space: normal;
+}
+.upload-bar {
+  height: 6px;
+  background: #e5e1da;
+  overflow: hidden;
+}
+.upload-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--ink);
+  transition: width 0.25s ease;
+}
+.upload-item.is-checking .upload-bar > span {
+  background: linear-gradient(90deg, var(--ink) 40%, #8a857c 50%, var(--ink) 60%);
+  background-size: 300% 100%;
+  animation: upload-checking 1.2s linear infinite;
+}
+.upload-item.is-done .upload-bar > span {
+  background: #2f7d4f;
+}
+.upload-item.is-failed {
+  border-color: #a42f23;
+}
+.upload-item.is-failed .upload-status {
+  color: #a42f23;
+}
+.upload-item.is-failed .upload-bar > span,
+.upload-item.is-cancelled .upload-bar > span {
+  width: 0 !important;
+}
+.upload-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.upload-actions button {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  font-size: 14px;
+  min-height: 32px;
+}
+.upload-actions button:hover {
+  border-color: var(--ink);
+}
+@keyframes upload-checking {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}

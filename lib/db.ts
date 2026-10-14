@@ -281,32 +281,67 @@ export async function storageSignedUrl(
 }
 
 /**
- * Read an uploaded file's size and first bytes (for signature checks)
- * without downloading the whole file. Returns null if it doesn't exist.
+ * Size and declared type of an uploaded file, from Supabase's file record
+ * (no download). Returns null if the file isn't in the bucket.
  */
-export async function storageInspect(
+export async function storageStat(
+  filename: string,
+): Promise<{ size: number; mime: string } | null> {
+  const { data, error } = await supabase()
+    .storage.from(BUCKET)
+    .list("", { search: filename, limit: 5 });
+  if (error) {
+    console.error("[storage] stat failed", filename, error.message);
+    return null;
+  }
+  const file = (data ?? []).find((f) => f.name === filename);
+  if (!file) return null;
+  const meta = (file.metadata ?? {}) as { size?: unknown; mimetype?: unknown };
+  return { size: Number(meta.size) || 0, mime: String(meta.mimetype ?? "") };
+}
+
+/**
+ * The first bytes of an uploaded file, for checking its real format.
+ * Asks for a byte range and drops the connection as soon as the bytes
+ * arrive, so it never downloads the whole file, even if the range request
+ * is ignored. Gives up (returns null) after `timeoutMs`.
+ */
+export async function storageHead(
   filename: string,
   bytes = 64,
-): Promise<{ size: number; head: Buffer } | null> {
+  timeoutMs = 8000,
+): Promise<Buffer | null> {
   const url = await storageSignedUrl(filename, 60);
   if (!url) return null;
-  const r = await fetch(url, { headers: { Range: `bytes=0-${bytes - 1}` } });
-  if (!r.ok) return null;
-  const total = r.headers.get("content-range")?.split("/")[1];
-  const size = Number(total ?? r.headers.get("content-length"));
-  // read only what we need, even if the server ignored the Range header
-  if (!r.body) return null;
-  const reader = r.body.getReader();
-  const parts: Uint8Array[] = [];
-  let read = 0;
-  while (read < bytes) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    parts.push(value);
-    read += value.length;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, {
+      headers: { Range: `bytes=0-${bytes - 1}` },
+      signal: controller.signal,
+    });
+    if (!r.ok || !r.body) return null;
+    const reader = r.body.getReader();
+    const parts: Uint8Array[] = [];
+    let read = 0;
+    while (read < bytes) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parts.push(value);
+      read += value.length;
+    }
+    return Buffer.concat(parts).subarray(0, bytes);
+  } catch (e) {
+    console.warn(
+      "[storage] could not read the start of",
+      filename,
+      e instanceof Error ? e.message : e,
+    );
+    return null;
+  } finally {
+    clearTimeout(timer);
+    controller.abort(); // close the connection; never wait for the rest
   }
-  await reader.cancel().catch(() => {});
-  return { size, head: Buffer.concat(parts).subarray(0, bytes) };
 }
 
 /**

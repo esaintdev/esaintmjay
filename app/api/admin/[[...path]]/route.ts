@@ -8,7 +8,8 @@ import {
   findById,
   groups,
   storageUploadUrl,
-  storageInspect,
+  storageStat,
+  storageHead,
   storageDelete,
 } from "../../../../lib/db.ts";
 import { requireAdmin } from "../../../../lib/auth.ts";
@@ -226,11 +227,23 @@ async function completeUpload(v: Body) {
     .maybeSingle();
   if (taken) throw new HttpError("Invalid upload.");
 
-  // Check what actually arrived in storage: size and file signature.
-  const stored = await storageInspect(filename);
+  // Check what actually arrived in storage: its size and real format.
+  const started = Date.now();
+  const stored = await storageStat(filename);
   if (!stored)
     throw new HttpError("The upload did not finish. Please try again.");
-  const type = fileType(stored.head);
+  const head = await storageHead(filename);
+  // The file's first bytes are its real format. If they can't be read in
+  // time, fall back to the type stored with the file, which the bucket
+  // already limits to images and PDF (see migrate.sql).
+  const type = head
+    ? fileType(head)
+    : stored.mime in extensions
+      ? { mime: stored.mime, ext: extensions[stored.mime] ?? "" }
+      : null;
+  console.info(
+    `[upload] ${filename}: ${(stored.size / 1048576).toFixed(1)} MB checked in ${Date.now() - started} ms${head ? "" : " (type from file record)"}`,
+  );
   if (
     !type ||
     type.ext !== ext ||
