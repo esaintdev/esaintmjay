@@ -221,13 +221,22 @@ export default async function Home() {
             />
             <div className="article-list">
               {articles.map((e) => (
-                <Link href={articlePath(e)} key={e.id}>
-                  <div>
+                <Link
+                  href={articlePath(e)}
+                  key={e.id}
+                  className={e.cover_id ? "has-thumb" : ""}
+                >
+                  {e.cover_id && (
+                    <div className="article-thumb" aria-hidden="true">
+                      <img src={`/media/${e.cover_id}`} alt="" loading="lazy" />
+                    </div>
+                  )}
+                  <div className="article-main">
                     <p className="eyebrow">{e.extra || "Design notes"}</p>
                     <h3>{e.title}</h3>
                   </div>
-                  <p>{e.subtitle}</p>
-                  <span>↗</span>
+                  <p className="article-desc">{e.subtitle}</p>
+                  <span className="article-arrow">↗</span>
                 </Link>
               ))}
             </div>
