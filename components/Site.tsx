@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { GroupSummary, Settings } from "../lib/types.ts";
+import SiteNav from "./SiteNav";
 export function Star() {
   return (
     <span aria-hidden="true" className="star">
@@ -17,16 +18,18 @@ export function Header({ settings: s }: { settings: Settings }) {
           <b>.</b>
         </span>
       </Link>
-      <nav aria-label="Main navigation">
-        <Link href="/work">Work</Link>
-        <Link href="/about">About</Link>
-        {s.showServices && <Link href="/services">Services</Link>}
-        {s.showArticles && <Link href="/journal">Journal</Link>}
-        <Link href="/contact">Contact</Link>
-      </nav>
-      <Link className="button" href="/contact">
+      <Link className="button header-cta" href="/contact">
         Let’s talk ↗
       </Link>
+      <SiteNav
+        links={[
+          { href: "/work", label: "Work" },
+          { href: "/about", label: "About" },
+          ...(s.showServices ? [{ href: "/services", label: "Services" }] : []),
+          ...(s.showArticles ? [{ href: "/journal", label: "Journal" }] : []),
+          { href: "/contact", label: "Contact" },
+        ]}
+      />
     </header>
   );
 }
