@@ -3159,3 +3159,142 @@ p {
   -webkit-appearance: none;
   margin: 0;
 }
+
+/* ─── Main navigation: menu button on tablets and phones ───────────────── */
+.site-header .site-nav {
+  order: 1;
+}
+.site-header .header-cta {
+  order: 2;
+}
+.site-nav a[aria-current="page"] {
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-underline-offset: 6px;
+}
+.nav-toggle,
+.site-nav .nav-panel-cta {
+  display: none;
+}
+.nav-toggle-icon {
+  position: relative;
+  display: inline-block;
+  width: 20px;
+  height: 12px;
+}
+.nav-toggle-icon span {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: currentColor;
+  transition:
+    transform 0.25s ease,
+    top 0.25s ease;
+}
+.nav-toggle-icon span:first-child {
+  top: 0;
+}
+.nav-toggle-icon span:last-child {
+  top: 10px;
+}
+.nav-toggle.is-open .nav-toggle-icon span:first-child {
+  top: 5px;
+  transform: rotate(45deg);
+}
+.nav-toggle.is-open .nav-toggle-icon span:last-child {
+  top: 5px;
+  transform: rotate(-45deg);
+}
+@keyframes nav-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 980px) {
+  .nav-toggle {
+    order: 3;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    padding: 8px 14px;
+    border: 1px solid var(--ink);
+    background: var(--paper);
+    font-size: 16px;
+    font-weight: 600;
+    position: relative;
+    z-index: 1001;
+  }
+  .nav-toggle.is-open {
+    background: var(--ink);
+    color: var(--paper);
+  }
+  .site-header .brand {
+    position: relative;
+    z-index: 1001;
+  }
+  .site-header .header-cta {
+    margin-left: auto;
+  }
+  .site-header .site-nav {
+    display: none;
+  }
+  .site-header .site-nav.is-open {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 4px;
+    width: auto;
+    margin: 0;
+    /* side padding matches the page margin (.wrap) so links line up with the logo */
+    padding: 120px 36px 40px;
+    border: 0;
+    background: var(--paper);
+    font-size: clamp(36px, 9vw, 58px);
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    line-height: 1.15;
+    overflow-y: auto;
+    animation: nav-panel-in 0.25s ease;
+  }
+  .site-nav.is-open a:not(.button):hover {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .site-nav.is-open .nav-panel-cta {
+    display: inline-flex;
+    margin-top: 32px;
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: normal;
+    line-height: 1.4;
+  }
+}
+@media (max-width: 720px) {
+  .site-header {
+    flex-wrap: nowrap;
+    min-height: 80px;
+    padding-top: 16px;
+    padding-bottom: 16px;
+  }
+  .site-header .header-cta {
+    display: none;
+  }
+  .nav-toggle {
+    margin-left: auto;
+  }
+  .site-header .site-nav.is-open {
+    padding: 100px 20px 32px;
+  }
+}
