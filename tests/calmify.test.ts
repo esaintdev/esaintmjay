@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { htmlToRichDoc } from "../lib/calmify-html.ts";
 import { sanitizeDoc } from "../lib/richtext.ts";
+import type { RichNode } from "../lib/richtext.ts";
 
 const id = "0b6f3c1e-4a8d-4c55-9a1e-2f3b4c5d6e7f";
 /** The sanitized document Calmify's HTML ends up as. */
@@ -202,4 +203,29 @@ test("deeply nested html is cut off rather than crashing", () => {
   const html = "<div>".repeat(3000) + "deep" + "</div>".repeat(3000);
   const d = doc(html);
   assert.ok(d === null || d.type === "doc");
+});
+
+test("in-text images are kept for the caller to rehost", () => {
+  const asset =
+    "https://fmjapeqidrxxatlniclu.supabase.co/storage/v1/object/public/a.png";
+  const raw = htmlToRichDoc(
+    `<p>Before</p><p><img src="${asset}" alt="A shot"></p>` +
+      `<p>After <img src="https://evil.example/y.png" alt="bad"></p>`,
+  );
+  assert.ok(raw);
+  const srcs: string[] = [];
+  const walk = (n: RichNode) => {
+    if (n.type === "image") srcs.push(String(n.attrs?.src));
+    (n.content ?? []).forEach(walk);
+  };
+  raw.content.forEach(walk);
+  // The converter keeps both; save decides which host to download.
+  assert.deepEqual(srcs, [asset, "https://evil.example/y.png"]);
+  // Text around an image stays, the image becomes its own block.
+  assert.deepEqual(
+    raw.content.map((n) => n.type),
+    ["paragraph", "image", "paragraph", "image"],
+  );
+  // After sanitizing, only our own /media/ images survive.
+  assert.ok(sanitizeDoc(raw)?.content.every((n) => n.type !== "image"));
 });

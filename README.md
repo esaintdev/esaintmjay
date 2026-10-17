@@ -97,7 +97,9 @@ Articles written in [Calmify](https://calmifye.vercel.app) publish straight to t
 
 A delivered article is saved as published; re-publishing updates the same article, and a retry never creates a duplicate. The cover is uploaded to the private bucket and served through `/media/[id]` like other images. A slug already used by a hand-written article is left untouched, and the delivery fails visibly instead.
 
-Calmify sends the body as HTML, while this site stores articles as a structured document (see [Journal](#journal-articles)). `lib/calmify-html.ts` converts the HTML and the result is sanitized as usual. Calmify plans to send a structured document alongside the HTML; when it does, that converter can be removed. Only the cover image is imported — images placed inside the article text are not.
+Calmify sends the body as HTML, while this site stores articles as a structured document (see [Journal](#journal-articles)). `lib/calmify-html.ts` converts the HTML and the result is sanitized as usual. Calmify plans to send a structured document alongside the HTML; when it does, that converter can be removed.
+
+Every image is rehosted in this site's private bucket, so nothing on the page points back at Calmify: the cover arrives as checked bytes, and images inside the article text are downloaded from Calmify's asset host (only that host), verified and re-uploaded. Images on any other host are dropped. Re-publishing deletes the images the article no longer uses.
 
 ## Administration included
 

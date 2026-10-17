@@ -14,6 +14,10 @@
  * through sanitizeDoc() by the caller. So anything outside the allowed
  * node/mark set is removed there regardless of what arrives here.
  *
+ * Image nodes keep whatever src the HTML gave, including other hosts: the
+ * caller (lib/calmify.ts) downloads the allowed ones from Calmify's asset
+ * host into our bucket, and sanitizeDoc() drops anything left over.
+ *
  * No server imports, so it can be tested offline.
  */
 import type { RichDoc, RichMark, RichNode } from "./richtext.ts";
@@ -291,7 +295,7 @@ function inlineNodes(child: Child, marks: RichMark[]): RichNode[] {
 
 function imageNode(el: Element): RichNode | null {
   const src = (el.attrs.src ?? "").trim();
-  if (!src.startsWith("/media/")) return null; // only this site's own images
+  if (!src) return null;
   const alt = el.attrs.alt ?? "";
   const title = el.attrs.title ?? "";
   return { type: "image", attrs: title ? { src, alt, title } : { src, alt } };
@@ -359,8 +363,9 @@ function block(el: Element, depth: number): RichNode[] {
   const tag = el.tag;
 
   if (tag === "p") {
-    const nodes = inline(inlineOf(el, []));
-    return nodes ? [{ type: "paragraph", content: nodes }] : [];
+    // A paragraph may hold images; blocks() splits those out into their own
+    // block-level image nodes and keeps the surrounding text as paragraphs.
+    return blocks(el.children, depth + 1);
   }
 
   const h = /^h([1-6])$/.exec(tag);
