@@ -16,6 +16,7 @@ import {
 } from "../lib/types.ts";
 import { errorMessage, apiCall } from "../lib/client.ts";
 import { useConfirm } from "./ConfirmModal";
+import { Star, StarIcon, Arrow, ArrowsH, MailIcon } from "./Site";
 import ArticleEditor from "./ArticleEditor";
 import { useUploadQueue, UploadList } from "./UploadQueue";
 import { articlePath, formatDate } from "../lib/seo.ts";
@@ -302,14 +303,14 @@ function Save({
 }) {
   return (
     <button className="button dark" disabled={busy}>
-      {busy ? "Saving…" : children} ↗
+      {busy ? "Saving…" : <span>{children} <Arrow /></span>}
     </button>
   );
 }
 function Empty({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="admin-empty">
-      <span className="star">✳</span>
+      <Star />
       <h3>{title}</h3>
       <p>{children}</p>
     </div>
@@ -450,7 +451,7 @@ export default function Admin() {
   if (!data)
     return (
       <main id="main" className="error-page">
-        <span className="star">✳</span>
+        <Star />
         <h2>Opening your studio…</h2>
         {notice && (
           <>
@@ -478,7 +479,7 @@ export default function Admin() {
     <div className="admin-shell">
       <aside className={`admin-sidebar ${mobile ? "is-open" : ""}`}>
         <a className="brand" href="/">
-          <span className="star">✳</span>
+          <Star />
           {s.name}.
         </a>
         <p className="eyebrow sidebar-label">YOUR STUDIO</p>
@@ -490,7 +491,18 @@ export default function Admin() {
               className={tab === id ? "selected" : ""}
             >
               <span>
-                {["◈", "▦", "↗", "✳", "↔", "☆", "≡", "↑", "✉", "◎"][i]}
+                {[
+                  "◈",
+                  "▦",
+                  <Arrow key="arrow" />,
+                  <StarIcon key="star" />,
+                  <ArrowsH key="exp" />,
+                  "☆",
+                  "≡",
+                  "↑",
+                  <MailIcon key="mail" />,
+                  "◎",
+                ][i]}
               </span>
               {label}
               {id === "inbox" && unread > 0 && (
@@ -501,7 +513,7 @@ export default function Admin() {
         </nav>
         <div className="sidebar-bottom">
           <a href="/" target="_blank" rel="noopener">
-            View portfolio ↗
+            View portfolio <Arrow />
           </a>
           <button
             onClick={async () => {
@@ -513,7 +525,7 @@ export default function Admin() {
               }
             }}
           >
-            Sign out ↗
+            Sign out <Arrow />
           </button>
         </div>
       </aside>
@@ -589,7 +601,7 @@ export default function Admin() {
                   ] satisfies [number, string, Tab][]
                 ).map(([n, l, t]) => (
                   <button key={l} onClick={() => go(t)}>
-                    <span>{l} ↗</span>
+                    <span>{l} <Arrow /></span>
                     <strong>{String(n).padStart(2, "0")}</strong>
                   </button>
                 ))}
@@ -609,10 +621,10 @@ export default function Admin() {
                     className="button"
                     onClick={() => go("groups", "new")}
                   >
-                    Create a collection ↗
+                    <span>Create a collection <Arrow /></span>
                   </button>
                 </div>
-                <span aria-hidden="true">✳</span>
+                <span aria-hidden="true"><StarIcon /></span>
               </div>
               <div className="two-col">
                 <section className="panel">
@@ -637,7 +649,7 @@ export default function Admin() {
                       onClick={() => go(t)}
                     >
                       {l}
-                      <span>↗</span>
+                      <Arrow />
                     </button>
                   ))}
                 </section>
@@ -700,7 +712,7 @@ export default function Admin() {
                           {a.image_id ? (
                             <img src={`/media/${a.image_id}`} alt={a.name} />
                           ) : (
-                            <span className="star">✳</span>
+                            <Star />
                           )}
                           <span className="badge">
                             {a.published ? "Published" : "Draft"}
@@ -717,7 +729,7 @@ export default function Admin() {
                           </p>
                           <div className="row-actions">
                             <button onClick={() => setSelected(a.id)}>
-                              Edit collection ↗
+                              Edit collection <Arrow />
                             </button>
                             {orderButtons(
                               "groups",
@@ -857,14 +869,14 @@ export default function Admin() {
                         target="_blank"
                         rel="noopener"
                       >
-                        {g.published ? "View" : "Preview"} ↗
+                        {g.published ? "View" : "Preview"} <Arrow />
                       </a>
                     )}
                   </div>
                 </form>
                 <aside>
                   <div className="panel editor-note">
-                    <span className="star">✳</span>
+                    <Star />
                     <h3>
                       One company.
                       <br />
@@ -1137,7 +1149,7 @@ export default function Admin() {
                             target="_blank"
                             rel="noopener"
                           >
-                            Preview ↗
+                            Preview <Arrow />
                           </a>
                         )}
                       </div>
@@ -1164,7 +1176,7 @@ export default function Admin() {
                                 target="_blank"
                                 rel="noopener"
                               >
-                                View ↗
+                                View <Arrow />
                               </a>
                             </p>
                           )}
@@ -1174,7 +1186,7 @@ export default function Admin() {
                           {a.kind !== "article" &&
                             orderButtons("entries", items, i)}
                           <button onClick={() => setSelected(a.id)}>
-                            Edit ↗
+                            Edit <Arrow />
                           </button>
                           <button
                             className="danger-text"
@@ -1236,7 +1248,7 @@ export default function Admin() {
                     )
                   ) : (
                     <div className="cv-preview">
-                      <span className="star">✳</span>
+                      <Star />
                       <h3>
                         {kind === "cv"
                           ? "Your story, on paper."
@@ -1301,7 +1313,7 @@ export default function Admin() {
                           className="button"
                           href={`mailto:${m.email}?subject=${encodeURIComponent("Re: " + m.subject)}`}
                         >
-                          Reply by email ↗
+                          <span>Reply by email <Arrow /></span>
                         </a>
                         <button
                           disabled={busy}

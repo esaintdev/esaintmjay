@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback, type ReactNode } from "react";
-import { Star } from "./Site";
+import { Star, Arrow } from "./Site";
 
 export type ConfirmOptions = {
   title?: string;
@@ -185,7 +185,7 @@ export default function ConfirmModal({
             className={`button dark ${destructive ? "confirm-modal-btn-destructive" : ""}`}
             onClick={onConfirm}
           >
-            {confirmLabel} ↗
+            {confirmLabel} <Arrow />
           </button>
         </div>
       </div>

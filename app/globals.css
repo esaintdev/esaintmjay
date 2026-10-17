@@ -189,6 +189,15 @@ p {
   font-size: 42px;
   line-height: 1;
 }
+/* Inline SVG icons (drawn, not typed characters, so iOS can't turn them
+   into emoji). Sized in em to follow the surrounding font-size. */
+.icon {
+  width: 1em;
+  height: 1em;
+  display: inline-block;
+  vertical-align: -0.125em;
+  flex: none;
+}
 .button {
   display: inline-flex;
   align-items: center;

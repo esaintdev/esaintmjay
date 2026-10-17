@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { errorMessage } from "../lib/client.ts";
+import { Star, Arrow } from "./Site";
 function EyeIcon() {
   return (
     <svg
@@ -69,7 +70,7 @@ export default function Login() {
   return (
     <main id="main" className="login-page">
       <div className="login-art">
-        <span className="star">✳</span>
+        <Star />
         <p className="eyebrow">Your creative space</p>
         <h1>
           Behind
@@ -116,7 +117,7 @@ export default function Login() {
             </div>
           </label>
           <button className="button dark" disabled={busy}>
-            {busy ? "Signing in…" : "Enter the studio ↗"}
+            {busy ? "Signing in…" : <span>Enter the studio <Arrow /></span>}
           </button>
           {error && (
             <p className="error-text" role="alert">

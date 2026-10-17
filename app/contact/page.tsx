@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { getSettings } from "../../lib/db.ts";
-import { Header, Footer, Star } from "../../components/Site";
+import { Header, Footer, Star, Arrow } from "../../components/Site";
 import Contact from "../../components/Contact";
 
 export const runtime = "nodejs";
@@ -30,7 +30,7 @@ export default async function ContactPage() {
               <p>{s.contactDescription}</p>
               {s.email && (
                 <a className="contact-email" href={`mailto:${s.email}`}>
-                  {s.email} ↗
+                  {s.email} <Arrow />
                 </a>
               )}
               {s.phone && <p>{s.phone}</p>}

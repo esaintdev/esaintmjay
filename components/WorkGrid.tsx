@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { GroupCard, Star } from "./Site";
+import { GroupCard, Star, Arrow } from "./Site";
 import type { GroupSummary } from "../lib/types.ts";
 export default function WorkGrid({ groups }: { groups: GroupSummary[] }) {
   const [category, setCategory] = useState("All work");
@@ -36,7 +36,7 @@ export default function WorkGrid({ groups }: { groups: GroupSummary[] }) {
             <h3>The next chapter is taking shape.</h3>
             <p>New design collections will appear here soon.</p>
             <a className="text-link" href="#contact">
-              Let’s create something together ↗
+              Let’s create something together <Arrow />
             </a>
           </div>
         </div>

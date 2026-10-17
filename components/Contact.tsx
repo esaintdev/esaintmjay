@@ -1,6 +1,7 @@
 "use client";
 import { useState, type FormEvent } from "react";
 import { errorMessage } from "../lib/client.ts";
+import { Arrow } from "./Site";
 export default function Contact() {
   const [state, setState] = useState({
     busy: false,
@@ -80,7 +81,7 @@ export default function Contact() {
         </label>
       </div>
       <button className="button dark" disabled={state.busy}>
-        {state.busy ? "Sending…" : "Send message ↗"}
+        {state.busy ? "Sending…" : <span>Send message <Arrow /></span>}
       </button>
       {state.message && (
         <p

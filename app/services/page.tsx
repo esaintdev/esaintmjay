@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { getSettings, entries } from "../../lib/db.ts";
-import { Header, Footer, SectionTitle } from "../../components/Site";
+import { Header, Footer, Arrow, SectionTitle } from "../../components/Site";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,7 +36,7 @@ export default async function ServicesPage() {
                 <article className="service" key={e.id}>
                   <div className="service-top">
                     <span>{String(i + 1).padStart(2, "0")}</span>
-                    <span>↗</span>
+                    <span><Arrow /></span>
                   </div>
                   <h3>{e.title}</h3>
                   <p>{e.body}</p>
@@ -53,14 +53,14 @@ export default async function ServicesPage() {
                   <div key={i}>
                     <span>{String(i + 1).padStart(2, "0")}</span>
                     <h3>{v.trim()}</h3>
-                    <span>↗</span>
+                    <span><Arrow /></span>
                   </div>
                 ))}
             </div>
           )}
           <div style={{ marginTop: "70px", textAlign: "center" }}>
             <Link className="button dark" href="/contact">
-              Let’s work together ↗
+              <span>Let’s work together <Arrow /></span>
             </Link>
           </div>
         </section>

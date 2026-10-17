@@ -1,5 +1,6 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
+import { Arrow } from "./Site";
 import type { Asset } from "../lib/types.ts";
 export default function Gallery({ images }: { images: Asset[] }) {
   const [index, setIndex] = useState<number | null>(null),
@@ -46,7 +47,7 @@ export default function Gallery({ images }: { images: Asset[] }) {
                 alt={a.alt || a.title}
                 loading={i > 1 ? "lazy" : "eager"}
               />
-              <span aria-hidden="true">↗</span>
+              <span aria-hidden="true"><Arrow /></span>
             </button>
             <figcaption>
               <h3>{a.title}</h3>

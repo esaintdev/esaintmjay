@@ -6,7 +6,7 @@ import {
   articles as latestArticles,
 } from "../lib/db.ts";
 import { articlePath } from "../lib/seo.ts";
-import { Header, Footer, Star, SectionTitle } from "../components/Site";
+import { Header, Footer, Star, StarIcon, Arrow, SectionTitle } from "../components/Site";
 import type { Metadata } from "next";
 import WorkGrid from "../components/WorkGrid";
 import Contact from "../components/Contact";
@@ -36,7 +36,7 @@ export default async function Home() {
             <p className="hero-description">{s.heroDescription}</p>
             <div className="hero-actions">
               <a className="button dark" href="#work">
-                Explore my work ↗
+                <span>Explore my work <Arrow /></span>
               </a>
               {s.cvId ? (
                 <a className="button" href={`/media/${s.cvId}`}>
@@ -44,7 +44,7 @@ export default async function Home() {
                 </a>
               ) : (
                 <a className="text-link" href="#about">
-                  Get to know me ↗
+                  Get to know me <Arrow />
                 </a>
               )}
             </div>
@@ -52,7 +52,7 @@ export default async function Home() {
           <div className={`hero-art ${s.portraitId ? "has-portrait" : ""}`}>
             <div className="art-orbit" aria-hidden="true" />
             <div className="art-star" aria-hidden="true">
-              ✳
+              <StarIcon />
             </div>
             {s.portraitId ? (
               <img
@@ -77,7 +77,7 @@ export default async function Home() {
             )}
             <div className="art-note">
               <span>Independent creative</span>
-              <strong>{s.role} ↗</strong>
+              <strong>{s.role} <Arrow /></strong>
             </div>
           </div>
         </section>
@@ -150,7 +150,7 @@ export default async function Home() {
                   <article className="service" key={e.id}>
                     <div className="service-top">
                       <span>{String(i + 1).padStart(2, "0")}</span>
-                      <span>↗</span>
+                      <span><Arrow /></span>
                     </div>
                     <h3>{e.title}</h3>
                     <p>{e.body}</p>
@@ -167,7 +167,7 @@ export default async function Home() {
                     <div key={i}>
                       <span>{String(i + 1).padStart(2, "0")}</span>
                       <h3>{v.trim()}</h3>
-                      <span>↗</span>
+                      <span><Arrow /></span>
                     </div>
                   ))}
               </div>
@@ -236,13 +236,13 @@ export default async function Home() {
                     <h3>{e.title}</h3>
                   </div>
                   <p className="article-desc">{e.subtitle}</p>
-                  <span className="article-arrow">↗</span>
+                  <span className="article-arrow"><Arrow /></span>
                 </Link>
               ))}
             </div>
             <p className="section-more">
               <Link className="text-link" href="/journal">
-                All articles ↗
+                All articles <Arrow />
               </Link>
             </p>
           </section>
@@ -256,7 +256,7 @@ export default async function Home() {
               <p>{s.contactDescription}</p>
               {s.email && (
                 <a className="contact-email" href={`mailto:${s.email}`}>
-                  {s.email} ↗
+                  {s.email} <Arrow />
                 </a>
               )}
               {s.phone && <p>{s.phone}</p>}

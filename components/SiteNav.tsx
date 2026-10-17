@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useLenis } from "lenis/react";
 import { useEffect, useId, useRef, useState } from "react";
+import { Arrow } from "./Site";
 
 export type NavLink = { href: string; label: string };
 
@@ -91,7 +92,7 @@ export default function SiteNav({ links }: { links: NavLink[] }) {
           href="/contact"
           onClick={() => setOpen(false)}
         >
-          Let’s talk ↗
+          <span>Let’s talk <Arrow /></span>
         </Link>
       </nav>
     </>

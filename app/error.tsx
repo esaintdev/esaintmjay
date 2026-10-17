@@ -1,4 +1,5 @@
 "use client";
+import { Arrow } from "../components/Site";
 export default function ErrorPage({
   reset,
 }: {
@@ -10,7 +11,7 @@ export default function ErrorPage({
       <h1>Something interrupted the page.</h1>
       <p>Please try again in a moment.</p>
       <button className="button dark" onClick={() => reset()}>
-        Try again ↗
+        <span>Try again <Arrow /></span>
       </button>
     </main>
   );

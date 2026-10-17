@@ -13,6 +13,7 @@ import {
   readingMinutes,
 } from "../lib/richtext.ts";
 import { describe } from "../lib/seo.ts";
+import { Arrow } from "./Site";
 import { useUploadQueue, UploadList } from "./UploadQueue";
 
 type SaveResult = { id?: string; slug?: string } | undefined;
@@ -281,7 +282,7 @@ export default function ArticleEditor({
           <p className="field-help">/journal/{shownSlug}</p>
           <div className="form-actions">
             <button className="button dark" disabled={busy || uploading}>
-              {busy ? "Saving…" : entry ? "Save article" : "Create article"} ↗
+              {busy ? "Saving…" : <span>{entry ? "Save article" : "Create article"} <Arrow /></span>}
             </button>
             {entry && (
               <a
@@ -290,7 +291,7 @@ export default function ArticleEditor({
                 target="_blank"
                 rel="noopener"
               >
-                {entry.published ? "View" : "Preview"} ↗
+                {entry.published ? "View" : "Preview"} <Arrow />
               </a>
             )}
           </div>
@@ -486,7 +487,7 @@ function Toolbar({
         <s>S</s>
       </Tool>
       <Tool label="Link" active={e.isActive("link")} onClick={onLink}>
-        ↗ Link
+        <Arrow /> Link
       </Tool>
       <span className="toolbar-divider" />
       <Tool
