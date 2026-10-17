@@ -86,6 +86,19 @@ Each article page includes a canonical URL, Open Graph and Twitter tags (with th
 
 Article text is stored as structured JSON, not HTML. The server keeps only known formatting, safe links (`https`, `mailto`, or paths on this site) and images uploaded to this site, and the page renders only those, so pasted content can't inject scripts or styles. Images removed from an article are deleted when it is saved, and deleting an article deletes its images.
 
+## Publishing from Calmify
+
+Articles written in [Calmify](https://calmifye.vercel.app) publish straight to the site. They arrive at `/api/calmify` and are saved as ordinary articles, so they appear at `/journal/<slug>` and in **Admin → Articles**, where they can be edited like any other.
+
+1. Deploy first, so `/api/calmify` is reachable.
+2. Run `npx calmify-pair` once with no code. It writes a private `CALMIFY_API_KEY` to `.env.local`; add it to your host's environment and redeploy.
+3. In Calmify, open **Websites → your site**, set the publishing destination to **Custom API**, then **Connect** to get a one-time code (e.g. `CALM-XXXX-XXXX`).
+4. Pair: `npx calmify-pair CALM-XXXX-XXXX --endpoint https://your-domain.example/api/calmify`. This also writes `CALMIFY_ASSET_HOST` to `.env.local`; add it to your host and redeploy so covers can be downloaded.
+
+A delivered article is saved as published; re-publishing updates the same article, and a retry never creates a duplicate. The cover is uploaded to the private bucket and served through `/media/[id]` like other images. A slug already used by a hand-written article is left untouched, and the delivery fails visibly instead.
+
+Calmify sends the body as HTML, while this site stores articles as a structured document (see [Journal](#journal-articles)). `lib/calmify-html.ts` converts the HTML and the result is sanitized as usual. Calmify plans to send a structured document alongside the HTML; when it does, that converter can be removed. Only the cover image is imported — images placed inside the article text are not.
+
 ## Administration included
 
 - Live overview counts and collection search.

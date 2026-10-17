@@ -134,6 +134,7 @@ export type Database = {
           seo_description: string;
           content: Json | null;
           published_at: string | null;
+          calmify_key: string;
         };
         Insert: {
           id?: string;
@@ -151,6 +152,7 @@ export type Database = {
           seo_description?: string;
           content?: Json | null;
           published_at?: string | null;
+          calmify_key?: string;
         };
         Update: Partial<Database["public"]["Tables"]["entries"]["Insert"]>;
         Relationships: [];

@@ -92,6 +92,12 @@ ALTER TABLE entries ADD COLUMN IF NOT EXISTS published_at    TIMESTAMPTZ;     --
 CREATE UNIQUE INDEX IF NOT EXISTS entries_article_slug
   ON entries (slug) WHERE kind = 'article' AND slug <> '';
 
+-- Calmify delivery key, so a redelivered post updates the same article
+-- instead of creating a second one. Empty for articles not from Calmify.
+ALTER TABLE entries ADD COLUMN IF NOT EXISTS calmify_key TEXT NOT NULL DEFAULT '';
+CREATE UNIQUE INDEX IF NOT EXISTS entries_calmify_key
+  ON entries (calmify_key) WHERE calmify_key <> '';
+
 -- Images that belong to an article (cover and in-text images). They are
 -- public only while the article is published.
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS entry_id TEXT REFERENCES entries(id) ON DELETE CASCADE;
