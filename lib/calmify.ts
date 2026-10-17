@@ -122,7 +122,7 @@ export async function calmifySave(
     const row = {
       kind: "article",
       title: post.title,
-      subtitle: "",
+      subtitle: post.metaDescription.slice(0, 300), // the visible deck/summary
       body: plainText(doc).slice(0, 100_000),
       extra: post.category.slice(0, 200), // the article's section label
       published: true,
